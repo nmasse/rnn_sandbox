@@ -1,0 +1,55 @@
+# base network
+
+dt: 20
+tc_soma: 100
+tc_modulator: 100
+n_exc: 400
+n_inh: 100
+n_input: 49
+n_fix: 1
+n_rule: 16
+n_actions: 3
+noise_rnn_sd: 0.02
+
+init_exc: 0.02
+init_inh: 0.04
+init_mod: 0.02
+
+inp_to_E_topo: 0.75
+inp_to_I_topo: 0.75
+rnn_mult_factor: 0.1666
+mod_mult_factor: 0.1666
+
+EE_kappa: 0.12
+EI_kappa: 0.22
+IE_kappa: 0.22
+II_kappa: 0.22
+
+EE_kappa_mod: 0.10
+EI_kappa_mod: 0.2
+IE_kappa_mod: 0.2
+II_kappa_mod: 0.1
+
+E_bias_mean: 0.01
+E_bias_std: 0.01
+I_bias_mean: 0.01
+I_bias_std: 0.01
+
+alpha_EI: 0.1
+alpha_EE: 0.1
+alpha_II: 0.0
+
+inp_E_weight: 0.15
+inp_I_weight: 0.11
+inp_E_topo: 2.
+inp_I_topo: 1.
+
+EE_topo: 2.
+EI_topo: 1.
+IE_topo: 1.
+II_topo: 0.0
+
+EE_topo_mod: 0.
+EI_topo_mod: 0.
+IE_topo_mod: 0.
+II_topo_mod: 0.
