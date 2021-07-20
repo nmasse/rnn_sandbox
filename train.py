@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 import os
 import copy
 import matplotlib.pyplot as plt
-import layers
+import layers3 as layers
 import analysis
 from stimulus import CognitiveTasks
 import yaml
@@ -24,6 +24,7 @@ class Actor:
         self._args = args
         self._rnn_params = rnn_params
         self.learning_type = learning_type
+        #self.n_hidden = rnn_params.n_exc + rnn_params.n_inh + rnn_params.n_mod
         self.n_hidden = rnn_params.n_exc + rnn_params.n_inh
         self.create_model()
         self.opt = tf.keras.optimizers.Adam(args.learning_rate, epsilon=1e-07)
@@ -38,19 +39,13 @@ class Actor:
 
         soma, modulator = self.RNN.model((x_input, s_input, m_input))
         h = tf.nn.relu(soma)
-
         policy = Dense(self._rnn_params.n_actions, activation='linear', name='policy')(h)
-        if self.learning_type == 'RL':
-            critic = Dense(1, activation='linear', name='critic')(h)
-        else:
-            critic = -1.
-
         self.model = tf.keras.models.Model([x_input, s_input, m_input], [policy, soma, modulator])
 
 
 
     def get_action(self, state):
-
+        # numpy based
         policy, soma, modulator = self.rnn.model.predict(state)
         actions = []
         for i in range(self._args.batch_size):
@@ -77,7 +72,7 @@ class Actor:
         return tf.reduce_mean(surrogate)
 
 
-    def train_SL(self, batch):
+    def train(self, batch):
 
         stimulus = batch[0]
         labels = batch[1]
@@ -85,7 +80,7 @@ class Actor:
 
         s, m = self.RNN.intial_activity(self._args.batch_size)
 
-        with tf.GradientTape(persistent=False) as tape:
+        with tf.GradientTape(persistent=True) as tape: #not sure persistent matters
 
             policy = []
             activity = []
@@ -101,13 +96,20 @@ class Actor:
         grads = tape.gradient(loss, self.model.trainable_variables)
         grads, _ = tf.clip_by_global_norm(grads, 0.5)
         grads_and_vars = []
+        v = np.ones((49,1),dtype=np.float32)
+        v[:33,0] = 0.
+        v = tf.constant(v)
         for g,v in zip(grads, self.model.trainable_variables):
-            #if 'input' in v.name:
-            #    g *= 0.
+            if not ('input' in v.name or 'policy' in v.name):
+                g *= 0.
+            if 'input' in v.name:
+                g *= v
+                #print(g.shape)
+                #1/0
             grads_and_vars.append((g,v))
         self.opt.apply_gradients(grads_and_vars)
 
-        return loss, activity
+        return loss, activity, policy
 
 
 class Agent:
@@ -155,38 +157,31 @@ class Agent:
             }
 
         for j, batch in enumerate(self.stim.dataset):
-            """
-            print('B', batch[0].shape)
-            plt.imshow(batch[0][0,...])
-            plt.colorbar()
-            plt.show()
-            plt.imshow(batch[1][0,...])
-            plt.colorbar()
-            plt.show()
-            plt.imshow(batch[2])
-            plt.colorbar()
-            plt.show()
-            """
-            loss, h = self.actor.train_SL(batch)
-            print('Train', j, np.round(loss, 5), np.round(np.mean(h),4))
-            """
-            plt.plot(np.mean(h,axis=(0,2)))
-            plt.show()
-            t = np.arange(0,130,5)*20 - 600
-            acc = analysis.decode_signal(np.float32(h), np.int32(batch[4]), list(range(0,130,5)))
-            plt.plot(t, acc)
-            plt.show()
-            1/0
-            """
 
+            loss, h, policy = self.actor.train(batch)
+            accuracy = analysis.accuracy_SL(policy, np.float32(batch[1]), np.float32(batch[2]))
+            print(f'Iteration {j} Loss {loss:1.4f} Accuracy {accuracy:1.3f} Mean activity {np.mean(h):2.4f}')
+            if j == 0:
+                plt.plot(np.mean(h,axis=(0,2)),'k')
+                plt.plot(np.mean(h[:,:,:400],axis=(0,2)),'b')
+                plt.plot(np.mean(h[:,:,400:450],axis=(0,2)),'r')
+                plt.plot(np.mean(h[:,:,450:],axis=(0,2)),'g')
+                plt.show()
+                t = np.arange(0,130,5)*20 - 600
+                acc = analysis.decode_signal(np.float32(h), np.int32(batch[4]), list(range(0,130,5)))
+                plt.plot(t, acc)
+                plt.show()
+                1/0
 
+            if j > self._args.n_iterations:
+                break
 
 
 
 parser = argparse.ArgumentParser('')
-parser.add_argument('--n_iterations', type=int, default=1000)
+parser.add_argument('--n_iterations', type=int, default=500)
 parser.add_argument('--batch_size', type=int, default=256)
-parser.add_argument('--learning_rate', type=float, default=0.002)
+parser.add_argument('--learning_rate', type=float, default=0.005)
 parser.add_argument('--rnn_params_fn', type=str, default='./rnn_params/base_rnn.yaml')
 args = parser.parse_args('')
 
