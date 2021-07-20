@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 import layers3 as layers
 import analysis
 from stimulus import CognitiveTasks
+from TaskManager import TaskManager, default_tasks
 import yaml
 from tensorflow.keras.layers import Dense
 import time
@@ -113,11 +114,14 @@ class Actor:
 
 
 class Agent:
-    def __init__(self, args, rnn_params):
+    def __init__(self, args, rnn_params, stim=None):
 
         self._args = args
         self.actor = Actor(args, rnn_params, learning_type='supervised')
-        self.stim = CognitiveTasks(rnn_params, batch_size=args.batch_size)
+        if stim is None:
+            self.stim = CognitiveTasks(rnn_params, batch_size=args.batch_size)
+        else:
+            self.stim = stim
 
         print('Trainable variables...')
         for v in self.actor.model.trainable_variables:
@@ -183,7 +187,8 @@ parser.add_argument('--n_iterations', type=int, default=500)
 parser.add_argument('--batch_size', type=int, default=256)
 parser.add_argument('--learning_rate', type=float, default=0.005)
 parser.add_argument('--rnn_params_fn', type=str, default='./rnn_params/base_rnn.yaml')
-args = parser.parse_args('')
+parser.add_argument('--test_stim', type=bool, default=False)
+args = parser.parse_args()
 
 print('Arguments:')
 for k, v in vars(args).items():
@@ -197,6 +202,14 @@ for k, v in vars(rnn_params).items():
     print(k,':', v)
 print()
 
+if args.test_stim:
+    tasks = default_tasks()
+    stim = TaskManager(tasks, batch_size=args.batch_size, tf2=True)
 
-agent = Agent(args, rnn_params)
+    # Adjust n input units / n outputs (actions) as per stim 
+    rnn_params.n_input   = stim.n_input
+    rnn_params.n_actions = stim.n_output
+else:
+    stim = None
+agent = Agent(args, rnn_params, stim=stim)
 agent.train()
