@@ -37,8 +37,8 @@ class Task(object):
         self.test_cost_multiplier = misc['test_cost_multiplier']
         self.n_motion_dirs        = misc['n_motion_dirs']
         self.n_RFs                = misc['n_RFs']
-        self.var_delay_max        = misc['var_delay_max']
-        self.mask_duration        = misc['mask_duration']
+        self.var_delay_max        = misc['var_delay_max'] // dt
+        self.mask_duration        = misc['mask_duration'] // dt
 
         # Bind RL info
         self.fix_break_penalty     = misc['fix_break_penalty']

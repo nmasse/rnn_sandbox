@@ -114,9 +114,10 @@ class TaskManager:
     def visualize_task(self, rule_id):
         # Visualize neural inputs and desired outputs of specified task
         trial_info = self.generate_batch(1, rule=rule_id)
-        fig, ax = plt.subplots(nrows=2, ncols=1, figsize=(5, 10))
-        ax[0].imshow(trial_info['neural_input'].squeeze().T, aspect='equal')
-        ax[1].imshow(trial_info['desired_output'].squeeze().T, aspect='equal')
+        fig, ax = plt.subplots(nrows=3, ncols=1, figsize=(5, 10))
+        ax[0].imshow(trial_info['neural_input'].squeeze().T, aspect='auto')
+        ax[1].imshow(trial_info['desired_output'].squeeze().T, aspect='auto')
+        ax[2].imshow(trial_info['train_mask'].T, aspect='auto')
         plt.show()
 
 
