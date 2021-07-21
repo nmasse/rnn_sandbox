@@ -109,33 +109,29 @@ class Model():
         input strength determined by Von Mises distribution.
         Inputs only project to every second neuron'''
 
-        W = np.zeros((self._args.n_input, self._args.n_hidden), dtype = np.float32)
-        N = self._args.n_input-self._args.n_fix-self._args.n_rule
-        W[:N, :self._args.n_exc] = von_mises(
-                                        self._inp_rnn_phase[:N, :self._args.n_exc],
-                                        self._args.inp_E_topo,
-                                        self._args.inp_E_weight)
-        #W[:N, :self._args.n_exc] -= np.mean(W[:N, :self._args.n_exc])
-        W[:N, self._args.n_exc:] = von_mises(
-                                        self._inp_rnn_phase[:N, self._args.n_exc:],
-                                        self._args.inp_I_topo,
-                                        self._args.inp_I_weight)
-        #W[:N, self._args.n_exc:] -= np.mean(W[:N, self._args.n_exc:])
+        We = np.random.gamma(self._args.inp_E_kappa, 1., size = (self._args.n_input, self._args.n_exc))
+        Wi = np.random.gamma(self._args.inp_I_kappa, 1., size = (self._args.n_input, self._args.n_inh))
 
-        #W[-self._args.n_rule:, :] += np.random.normal(0, 0.1, size=W[-self._args.n_rule:, :].shape)
-        #W[N:, :] = np.random.normal(0, 0.1, size=W[N:, :].shape)
-        W[N:, :self._args.n_exc] = np.random.uniform(0., 0.1, W[N:, :self._args.n_exc].shape)
-        W[N:, self._args.n_exc:] = np.random.uniform(0., 0.2, W[N:, self._args.n_exc:].shape)
-        #W[:N, :] += np.random.normal(0, 0.1, size=W[:N, :].shape)
-        #W += np.random.normal(0, 0.1, size=W.shape)
+        N = self._args.n_input - self._args.n_fix - self._args.n_rule
 
-        """
+        We[:N, :] *= von_mises(
+                    self._inp_rnn_phase[:N, :self._args.n_exc],
+                    self._args.inp_E_topo,
+                    self._args.input_weight)
+        Wi[:N, :] *= von_mises(
+                    self._inp_rnn_phase[:N, self._args.n_exc:],
+                    self._args.inp_I_topo,
+                    self._args.input_weight)
+
+        W = np.concatenate((We, Wi), axis=1)
+
+        W = np.clip(W, 0., 2.)
+
         plt.imshow(W,aspect='auto')
         plt.colorbar()
         plt.show()
-        """
 
-        return W
+        return np.float32(W)
 
 
     def _initialize_recurrent_weights(self):
@@ -162,20 +158,19 @@ class Model():
         Wee *= von_mises(
                     self._rnn_rnn_phase[:self._args.n_exc, :self._args.n_exc],
                     self._args.EE_topo,
-                    self._args.rnn_mult_factor)
+                    self._args.rnn_weight)
         Wei *= von_mises(
                     self._rnn_rnn_phase[self._args.n_exc:, :self._args.n_exc],
                     self._args.EI_topo,
-                    self._args.rnn_mult_factor)
+                    self._args.rnn_weight)
         Wie *= von_mises(
                     self._rnn_rnn_phase[:self._args.n_exc, self._args.n_exc:],
                     self._args.IE_topo,
-                    self._args.rnn_mult_factor)
+                    self._args.rnn_weight)
         Wii *= von_mises(
                     self._rnn_rnn_phase[self._args.n_exc:, self._args.n_exc:],
                     self._args.II_topo,
-                    self._args.rnn_mult_factor)
-
+                    self._args.rnn_weight)
 
         We = np.hstack((Wee, Wie))
         Wi = np.hstack((Wei, Wii))
@@ -195,7 +190,7 @@ class Model():
         for i in range(self._args.n_hidden):
             w_rnn[i, i] = 0.
 
-        w_rnn = np.clip(w_rnn, 0., 1.)
+        w_rnn = np.clip(w_rnn, 0., 2.)
 
         return np.float32(w_rnn), np.float32(b_rnn)
 

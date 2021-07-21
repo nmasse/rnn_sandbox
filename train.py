@@ -164,7 +164,7 @@ class Agent:
 
             accuracy = analysis.accuracy_SL(policy, np.float32(batch[1]), np.float32(batch[2]))
             print(f'Iteration {j} Loss {loss:1.4f} Accuracy {accuracy:1.3f} Mean activity {np.mean(h):2.4f}')
-            if j == 0 or j == 500:
+            if j == 0 or j == 5000:
                 plt.plot(np.mean(h,axis=(0,2)),'b')
                 plt.plot(np.mean(h[:,:,:self._rnn_params.n_exc],axis=(0,2)),'r')
                 plt.plot(np.mean(h[:,:,self._rnn_params.n_exc:],axis=(0,2)),'g')
@@ -180,9 +180,9 @@ class Agent:
 
 
 parser = argparse.ArgumentParser('')
-parser.add_argument('--n_iterations', type=int, default=1500)
-parser.add_argument('--batch_size', type=int, default=1024)
-parser.add_argument('--learning_rate', type=float, default=0.001)
+parser.add_argument('--n_iterations', type=int, default=6000)
+parser.add_argument('--batch_size', type=int, default=256)
+parser.add_argument('--learning_rate', type=float, default=0.002)
 parser.add_argument('--rnn_params_fn', type=str, default='./rnn_params/base_rnn.yaml')
 parser.add_argument('--test_stim', type=bool, default=True)
 parser.add_argument('--train_context_only', type=bool, default=True)
