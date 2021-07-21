@@ -3,6 +3,7 @@ import copy
 from itertools import product
 import tensorflow as tf
 import matplotlib.pyplot as plt
+from tensorflow.keras.layers import Dense
 
 
 class Model():
@@ -20,13 +21,14 @@ class Model():
 
         self.EI_list = [1. for i in range(self._args.n_exc)] + \
             [-1. for i in range(self._args.n_inh)]
-        self.EI = tf.linalg.diag(tf.constant(self.EI_list))
-        self.mask = tf.ones_like(self.EI) - tf.linalg.diag(tf.ones(self._args.n_hidden))
-        self.EI = tf.cast(self.EI, tf.float32)
+
+        self.EI_matrix = tf.linalg.diag(tf.constant(self.EI_list))
+        self.mask = tf.ones_like(self.EI_matrix) - tf.linalg.diag(tf.ones(self._args.n_hidden))
+        self.EI = tf.cast(self.EI_matrix, tf.float32)
         self.mask = tf.cast(self.mask, tf.float32)
 
         w_in = self._initialize_input_weights()
-        w_rnn, w_mod, b_rnn = self._initialize_recurrent_weights()
+        w_rnn, b_rnn = self._initialize_recurrent_weights()
 
         alpha_soma = self._args.dt / self._args.tc_soma
         alpha_modulator = self._args.dt / self._args.tc_modulator
@@ -34,39 +36,58 @@ class Model():
 
         x_input = tf.keras.Input((self._args.n_input,)) # Stimulus input
         s_input = tf.keras.Input((self._args.n_hidden,)) # Soma
-        m_input = tf.keras.Input((self._args.n_hidden,)) # Modulator
+        m_input = tf.keras.Input((1,)) # Modulator
 
         h = tf.nn.relu(s_input) # Spiking activity
         soma = (1 - alpha_soma) * s_input
         modulator = (1 - alpha_modulator) * m_input
 
         input_current = Linear(w_in, name='input')(x_input)
-        rec_current = Recurrent(w_rnn, b_rnn, self.mask, self.EI, name='rnn')(h)
-        modulation = Linear(w_mod, mask=self.mask, name='mod')(h)
+        #input_current = Dense(w_in, name='input')(x_input)
+        rec_current = Recurrent(w_rnn, b_rnn, self.mask, self.EI_matrix, name='rnn')(h)
+        modulation = tf.reduce_sum(h[:, :self._args.n_exc], axis=-1, keepdims=True)
+        #modulation = tf.reduce_sum(h, axis=-1, keepdims=True)
 
         modulator += alpha_modulator * modulation
-        effective_mod = 1 / (1 + tf.nn.relu(modulator))
-
+        effective_mod = 1 / (1 + self._args.mod_beta * tf.nn.relu(modulator))
 
         noise = tf.random.normal(tf.shape(h), mean=0., stddev=noise_rnn_sd)
-        soma += alpha_soma * (input_current + effective_mod * rec_current + noise)
-        # TODO: Think about bias term and modulation!!!!!!!!!!!!!!!!!
+        #m = effective_mod ** tf.nn.relu(tf.constant(self.EI_list))
+        #print('M',m.shape)
+        #rec_current *= m
+        #print('X', rec_current.shape, effective_mod.shape)
+        rec_current *= effective_mod
 
+        soma += alpha_soma * (input_current + rec_current + noise)
+        # TODO: Think about bias term and modulation!!!!!!!!!!!!!!!!!
+        #soma = tf.nn.relu(soma)
         return tf.keras.models.Model(
             inputs=[x_input, s_input, m_input],
             outputs=[soma, modulator])
+
+
+    def generate_new_weights(self):
+
+        w_in = self._initialize_input_weights()
+        w_rnn, b_rnn = self._initialize_recurrent_weights()
+        for v in self.model.trainable_variables:
+            print(v.name)
+        1/0
+
+
+
 
     def intial_activity(self, batch_size):
 
         soma_exc = tf.random.uniform((batch_size, self._args.n_exc), 0., self._args.init_exc)
         soma_inh = tf.random.uniform((batch_size, self._args.n_inh), 0., self._args.init_inh)
         soma_init = tf.concat((soma_exc, soma_inh), axis = -1)
-        mod_init = tf.random.uniform((batch_size, self._args.n_hidden), 0., self._args.init_mod)
+        mod_init = tf.random.uniform((batch_size, 1), 0., self._args.init_mod)
 
         return soma_init, mod_init
 
 
-    def _set_pref_dirs(self, kappa = 2.):
+    def _set_pref_dirs(self):
 
         '''Motion direcion input neurons will have prefered direction, but
         fixation neurons will not. Fixation neurons will be at the end of
@@ -89,37 +110,41 @@ class Model():
         Inputs only project to every second neuron'''
 
         W = np.zeros((self._args.n_input, self._args.n_hidden), dtype = np.float32)
-        W[:, 0:self._args.n_exc:1] = von_mises(
-                                        self._inp_rnn_phase[:, 0:self._args.n_exc:1],
+        N = self._args.n_input-self._args.n_fix-self._args.n_rule
+        W[:N, :self._args.n_exc] = von_mises(
+                                        self._inp_rnn_phase[:N, :self._args.n_exc],
                                         self._args.inp_E_topo,
                                         self._args.inp_E_weight)
-        W[:, self._args.n_exc::1] = von_mises(
-                                        self._inp_rnn_phase[:, self._args.n_exc::1],
+        #W[:N, :self._args.n_exc] -= np.mean(W[:N, :self._args.n_exc])
+        W[:N, self._args.n_exc:] = von_mises(
+                                        self._inp_rnn_phase[:N, self._args.n_exc:],
                                         self._args.inp_I_topo,
                                         self._args.inp_I_weight)
+        #W[:N, self._args.n_exc:] -= np.mean(W[:N, self._args.n_exc:])
 
-        #W = np.zeros((self._args.n_input, self._args.n_hidden), dtype = np.float32)
-        #W[:, 0:self._args.n_exc:2] = self._args.inp_E_weight * np.exp(self._args.inp_E_topo * self._inp_rnn_phase[:, 0:self._args.n_exc:2]) / np.exp(self._args.inp_E_topo)
-        #W[:, self._args.n_exc::2] = self._args.inp_I_weight * np.exp(self._args.inp_I_topo * self._inp_rnn_phase[:, self._args.n_exc::2]) / np.exp(self._args.inp_I_topo)
+        #W[-self._args.n_rule:, :] += np.random.normal(0, 0.1, size=W[-self._args.n_rule:, :].shape)
+        #W[N:, :] = np.random.normal(0, 0.1, size=W[N:, :].shape)
+        W[N:, :self._args.n_exc] = np.random.uniform(0., 0.1, W[N:, :self._args.n_exc].shape)
+        W[N:, self._args.n_exc:] = np.random.uniform(0., 0.2, W[N:, self._args.n_exc:].shape)
+        #W[:N, :] += np.random.normal(0, 0.1, size=W[:N, :].shape)
+        #W += np.random.normal(0, 0.1, size=W.shape)
 
-        #plt.imshow(W, aspect='auto')
-        #plt.colorbar()
-        #plt.show()
+        """
+        plt.imshow(W,aspect='auto')
+        plt.colorbar()
+        plt.show()
+        """
 
         return W
 
 
     def _initialize_recurrent_weights(self):
 
+
         Wee = np.random.gamma(self._args.EE_kappa, 1., size = (self._args.n_exc, self._args.n_exc))
         Wie = np.random.gamma(self._args.IE_kappa, 1., size = (self._args.n_exc, self._args.n_inh))
         Wei = np.random.gamma(self._args.EI_kappa, 1., size = (self._args.n_inh, self._args.n_exc))
         Wii = np.random.gamma(self._args.II_kappa, 1., size = (self._args.n_inh, self._args.n_inh))
-
-        Wee_mod = np.random.gamma(self._args.EE_kappa_mod, 1., size = (self._args.n_exc, self._args.n_exc))
-        Wie_mod = np.random.gamma(self._args.IE_kappa_mod, 1., size = (self._args.n_exc, self._args.n_inh))
-        Wei_mod = np.random.gamma(self._args.EI_kappa_mod, 1., size = (self._args.n_inh, self._args.n_exc))
-        Wii_mod = np.random.gamma(self._args.II_kappa_mod, 1., size = (self._args.n_inh, self._args.n_inh))
 
 
         # Controlling the strength of the reciprocal connection
@@ -136,52 +161,25 @@ class Model():
         # Applying the topological modifier
         Wee *= von_mises(
                     self._rnn_rnn_phase[:self._args.n_exc, :self._args.n_exc],
-                    self._args.EE_topo, 1.)
+                    self._args.EE_topo,
+                    self._args.rnn_mult_factor)
         Wei *= von_mises(
                     self._rnn_rnn_phase[self._args.n_exc:, :self._args.n_exc],
-                    self._args.EI_topo, 1.)
+                    self._args.EI_topo,
+                    self._args.rnn_mult_factor)
         Wie *= von_mises(
                     self._rnn_rnn_phase[:self._args.n_exc, self._args.n_exc:],
-                    self._args.IE_topo, 1.)
+                    self._args.IE_topo,
+                    self._args.rnn_mult_factor)
         Wii *= von_mises(
                     self._rnn_rnn_phase[self._args.n_exc:, self._args.n_exc:],
-                    self._args.II_topo, 1.)
-
-        Wee_mod *= 0*von_mises(
-                    self._rnn_rnn_phase[:self._args.n_exc, :self._args.n_exc],
-                    self._args.EE_topo_mod, 1.)
-        Wei_mod *= von_mises(
-                    self._rnn_rnn_phase[self._args.n_exc:, :self._args.n_exc],
-                    self._args.EI_topo_mod, 1.)
-        Wie_mod *= 0*von_mises(
-                    self._rnn_rnn_phase[:self._args.n_exc, self._args.n_exc:],
-                    self._args.IE_topo_mod, 1.)
-        Wii_mod *= 0*von_mises(
-                    self._rnn_rnn_phase[self._args.n_exc:, self._args.n_exc:],
-                    self._args.II_topo_mod, 1.)
-
-
-
-        #Wee *= (1 + self._args.EE_topo*self._rnn_rnn_phase[:self._args.n_exc, :self._args.n_exc])
-        #Wei *= (1 + self._args.EI_topo*self._rnn_rnn_phase[self._args.n_exc:, :self._args.n_exc])
-        #Wie *= (1 + self._args.EI_topo*self._rnn_rnn_phase[:self._args.n_exc, self._args.n_exc:])
-        #Wii *= (1 + self._args.II_topo*self._rnn_rnn_phase[self._args.n_exc:, self._args.n_exc:])
-
-        #Wee_mod *= (1 + self._args.EE_topo_mod*self._rnn_rnn_phase[:self._args.n_exc, :self._args.n_exc])
-        #Wei_mod *= (1 + self._args.EI_topo_mod*self._rnn_rnn_phase[self._args.n_exc:, :self._args.n_exc])
-        #Wie_mod *= (1 + self._args.EI_topo_mod*self._rnn_rnn_phase[:self._args.n_exc, self._args.n_exc:])
-        #Wii_mod *= (1 + self._args.II_topo_mod*self._rnn_rnn_phase[self._args.n_exc:, self._args.n_exc:])
+                    self._args.II_topo,
+                    self._args.rnn_mult_factor)
 
 
         We = np.hstack((Wee, Wie))
         Wi = np.hstack((Wei, Wii))
         w_rnn = np.vstack((We, Wi))
-        w_rnn *= self._args.rnn_mult_factor
-
-        We_mod = np.hstack((Wee_mod, Wie_mod))
-        Wi_mod = np.hstack((Wei_mod, Wii_mod))
-        w_mod = np.vstack((We_mod, Wi_mod))
-        w_mod *= self._args.mod_mult_factor
 
         b_rnn = np.zeros((self._args.n_hidden), dtype = np.float32)
         b_rnn[:self._args.n_exc] = np.random.normal(
@@ -196,10 +194,10 @@ class Model():
 
         for i in range(self._args.n_hidden):
             w_rnn[i, i] = 0.
-            w_mod[i, i] = 0.
 
+        w_rnn = np.clip(w_rnn, 0., 1.)
 
-        return np.float32(w_rnn), np.float32(w_mod), np.float32(b_rnn)
+        return np.float32(w_rnn), np.float32(b_rnn)
 
 
 
@@ -244,7 +242,9 @@ class LSTM(tf.keras.layers.Layer):
 
 def von_mises(phase, kappa, alpha):
 
-    return alpha * np.exp(kappa * phase) / np.exp(kappa)
+    x = np.exp(kappa * phase) / np.exp(kappa)
+    x /= np.mean(x)
+    return alpha * x
 
 class Linear(tf.keras.layers.Layer):
     def __init__(self, initial_weights, mask=None, name=''):

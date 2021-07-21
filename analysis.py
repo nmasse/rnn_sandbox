@@ -27,3 +27,13 @@ def decode_signal(X, y, timesteps, k_folds=4):
             svm_acc[t, i] = svm.score(X_te, y_te)
 
     return np.mean(svm_acc, axis=-1)
+
+def accuracy_SL(policy, labels, mask):
+
+    #print(policy.shape, labels.shape)
+    labels_amax = np.argmax(labels,axis=-1)
+    policy_amax = np.argmax(policy,axis=-1)
+    non_fix_period = np.float32(labels_amax > 0)
+    task_mask = mask * non_fix_period
+
+    return np.sum(task_mask * (labels_amax == policy_amax)) / np.sum(task_mask)

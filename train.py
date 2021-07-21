@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 import os
 import copy
 import matplotlib.pyplot as plt
-import layers3 as layers
+import layers
 import analysis
 from stimulus import CognitiveTasks
 from TaskManager import TaskManager, default_tasks
@@ -14,7 +14,7 @@ import yaml
 from tensorflow.keras.layers import Dense
 import time
 
-gpu_idx = 0
+gpu_idx = 1
 gpus = tf.config.experimental.list_physical_devices('GPU')
 tf.config.experimental.set_visible_devices(gpus[gpu_idx], 'GPU')
 #os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
@@ -32,6 +32,11 @@ class Actor:
 
 
     def create_model(self):
+
+        #init = tf.keras.initializers.Orthogonal(gain=0.1)
+        #init = tf.keras.initializers.GlorotNormal()
+        #init = 0.1 * init(shape=(self.n_hidden, self._rnn_params.n_actions))
+
         x_input = tf.keras.Input((self._rnn_params.n_input,)) # Stimulus input
         s_input = tf.keras.Input((self.n_hidden,)) # Soma
         m_input = tf.keras.Input((self.n_hidden,)) # Modulator
@@ -60,19 +65,6 @@ class Actor:
         return actions, policy, critic, soma, modulator
 
 
-    def compute_policy_loss(self, log_old_policy, log_new_policy, gaes):
-
-        ratio = tf.exp(log_new_policy - tf.stop_gradient(log_old_policy))
-        gaes = tf.stop_gradient(gaes)
-        #gaes = gaes[:, tf.newaxis]
-
-        clipped_ratio = tf.clip_by_value(
-            ratio, 1.0-args.clip_ratio, 1.0+args.clip_ratio)
-        surrogate = -tf.minimum(ratio * gaes, clipped_ratio * gaes)
-
-        return tf.reduce_mean(surrogate)
-
-
     def train(self, batch):
 
         stimulus = batch[0]
@@ -81,7 +73,7 @@ class Actor:
 
         s, m = self.RNN.intial_activity(self._args.batch_size)
 
-        with tf.GradientTape(persistent=True) as tape: #not sure persistent matters
+        with tf.GradientTape(persistent=False) as tape: #not sure persistent matters
 
             policy = []
             activity = []
@@ -97,17 +89,20 @@ class Actor:
         grads = tape.gradient(loss, self.model.trainable_variables)
         grads, _ = tf.clip_by_global_norm(grads, 0.5)
         grads_and_vars = []
-        v = np.ones((49,1),dtype=np.float32)
-        v[:33,0] = 0.
-        v = tf.constant(v)
+        m = np.ones((41,1),dtype=np.float32)
+        m[:33,0] = 0.
+        m = tf.constant(m)
         for g,v in zip(grads, self.model.trainable_variables):
-            if not ('input' in v.name or 'policy' in v.name):
-                g *= 0.
-            if 'input' in v.name:
-                g *= v
-                #print(g.shape)
-                #1/0
+
+            if self._args.train_context_only:
+                if not ('input' in v.name or 'policy' in v.name):
+                    g *= 0.
+                if 'input' in v.name:
+                    g *= m
+
+
             grads_and_vars.append((g,v))
+
         self.opt.apply_gradients(grads_and_vars)
 
         return loss, activity, policy
@@ -117,6 +112,7 @@ class Agent:
     def __init__(self, args, rnn_params, stim=None):
 
         self._args = args
+        self._rnn_params = rnn_params
         self.actor = Actor(args, rnn_params, learning_type='supervised')
         if stim is None:
             self.stim = CognitiveTasks(rnn_params, batch_size=args.batch_size)
@@ -161,21 +157,22 @@ class Agent:
             }
 
         for j, batch in enumerate(self.stim.dataset):
-
+            #plt.imshow(batch[0][0,...],aspect='auto')
+            #plt.colorbar()
+            #plt.show()
             loss, h, policy = self.actor.train(batch)
+
             accuracy = analysis.accuracy_SL(policy, np.float32(batch[1]), np.float32(batch[2]))
             print(f'Iteration {j} Loss {loss:1.4f} Accuracy {accuracy:1.3f} Mean activity {np.mean(h):2.4f}')
-            if j == 0:
-                plt.plot(np.mean(h,axis=(0,2)),'k')
-                plt.plot(np.mean(h[:,:,:400],axis=(0,2)),'b')
-                plt.plot(np.mean(h[:,:,400:450],axis=(0,2)),'r')
-                plt.plot(np.mean(h[:,:,450:],axis=(0,2)),'g')
+            if j == 0 or j == 500:
+                plt.plot(np.mean(h,axis=(0,2)),'b')
+                plt.plot(np.mean(h[:,:,:self._rnn_params.n_exc],axis=(0,2)),'r')
+                plt.plot(np.mean(h[:,:,self._rnn_params.n_exc:],axis=(0,2)),'g')
                 plt.show()
-                t = np.arange(0,130,5)*20 - 600
-                acc = analysis.decode_signal(np.float32(h), np.int32(batch[4]), list(range(0,130,5)))
+                t = np.arange(0,125,5)*20 - 500
+                acc = analysis.decode_signal(np.float32(h), np.int32(batch[4]), list(range(0,125,5)))
                 plt.plot(t, acc)
                 plt.show()
-                1/0
 
             if j > self._args.n_iterations:
                 break
@@ -183,11 +180,13 @@ class Agent:
 
 
 parser = argparse.ArgumentParser('')
-parser.add_argument('--n_iterations', type=int, default=500)
-parser.add_argument('--batch_size', type=int, default=256)
-parser.add_argument('--learning_rate', type=float, default=0.005)
+parser.add_argument('--n_iterations', type=int, default=1500)
+parser.add_argument('--batch_size', type=int, default=1024)
+parser.add_argument('--learning_rate', type=float, default=0.001)
 parser.add_argument('--rnn_params_fn', type=str, default='./rnn_params/base_rnn.yaml')
-parser.add_argument('--test_stim', type=bool, default=False)
+parser.add_argument('--test_stim', type=bool, default=True)
+parser.add_argument('--train_context_only', type=bool, default=True)
+
 args = parser.parse_args()
 
 print('Arguments:')
@@ -204,9 +203,12 @@ print()
 
 if args.test_stim:
     tasks = default_tasks()
+    #tasks = tasks[0:1]
+    #print(tasks)
+    #1/0
     stim = TaskManager(tasks, batch_size=args.batch_size, tf2=True)
 
-    # Adjust n input units / n outputs (actions) as per stim 
+    # Adjust n input units / n outputs (actions) as per stim
     rnn_params.n_input   = stim.n_input
     rnn_params.n_actions = stim.n_output
 else:
