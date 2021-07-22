@@ -194,11 +194,11 @@ class Agent:
 
         print('Determing initial sample decoding accuracy...')
         h = self.actor.run_batch(self.dms_batch, h_init, m_init)
-        decode_time = [(200+300+980) // self._rnn_params.dt]
+        results['sample_decode_time'] = (200+300+980) // self._rnn_params.dt
         results['sample_decoding'] = analysis.decode_signal(
                             np.float32(h),
                             np.int32(self.dms_batch[4]),
-                            decode_time)[0]
+                            [results['sample_decode_time']])[0]
 
         print(f"Decoding accuracy {results['sample_decoding']:1.3f}")
 
@@ -213,23 +213,11 @@ class Agent:
 
             loss, h, policy = self.actor.train(batch, h_init, m_init, learning_rate)
 
-
             accuracy = analysis.accuracy_SL(policy, np.float32(batch[1]), np.float32(batch[2]))
             print(f'Iteration {j} Loss {loss:1.4f} Accuracy {accuracy:1.3f} Mean activity {np.mean(h):2.4f} Time {time.time()-t0:2.2f}')
-
             results['loss'].append(loss.numpy())
             results['task_accuracy'].append(accuracy)
 
-
-            if j == -1 or j == self._args.n_iterations-1:
-                plt.plot(np.mean(h,axis=(0,2)),'b')
-                plt.plot(np.mean(h[:,:,:self._rnn_params.n_exc],axis=(0,2)),'r')
-                plt.plot(np.mean(h[:,:,self._rnn_params.n_exc:],axis=(0,2)),'g')
-                plt.show()
-                t = np.arange(0,90,5)*20 - 200
-                acc = analysis.decode_signal(np.float32(h), np.int32(batch[4]), list(range(0,90,5)))
-                plt.plot(t, acc)
-                plt.show()
 
         save_fn = 'results/results'+str(id)+'.pkl'
         pickle.dump(results, open(save_fn, 'wb'))
