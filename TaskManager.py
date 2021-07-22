@@ -19,7 +19,7 @@ class TaskManager:
                  input_mean = 0,
                  input_noise = 0.0,
                  catch_trial_pct = 0.,
-                 test_cost_mult = 1.,
+                 test_cost_mult = 2.,
                  fix_break_penalty = -1.0,
                  correct_choice_reward = 1.0,
                  wrong_choice_penalty = -0.01,
@@ -140,7 +140,9 @@ class TaskManager:
             for i in range(batch_size):
                 rule = np.random.choice(self.n_rule_tuned)
                 trial_info = self.write_trial(trial_info,
-                    self.task_list[rule].generate_trials(1, **kwargs), i, batch_size)
+                    self.task_list[rule].generate_trials(1, **kwargs),
+                    i,
+                    batch_size)
 
         # Extract just the elements that are necessary for the tf dataset
         if self.tf2:
@@ -241,16 +243,16 @@ class TaskManager:
 
 def default_tasks():
 
-    generic_timing = {'dead_time'   : 100,
-                     'fix_time'     : 500,
-                     'sample_time'  : 500,
+    generic_timing = {'dead_time'   : 300,
+                     'fix_time'     : 200,
+                     'sample_time'  : 300,
                      'delay_time'   : 1000,
-                     'test_time'    : 500}
+                     'test_time'    : 300}
 
     # Example of usage: DMS, DMRS, DMC, delay_go (all same extra params)
     DMS = {}
     DMS['name'] = 'DMS'
-    DMS['n_motion_dirs'] = 8
+    DMS['n_motion_dirs'] = 6
     DMS['n_cues'] = 0
     DMS['n_RFs'] = 1
     DMS['var_delay'] = False
@@ -262,7 +264,7 @@ def default_tasks():
     DMRS45 = {}
     DMRS45['name'] = 'DMRS'
     DMRS45['rotation'] = 45
-    DMRS45['n_motion_dirs'] = 8
+    DMRS45['n_motion_dirs'] = 6
     DMRS45['n_cues'] = 0
     DMRS45['n_RFs'] = 1
     DMRS45['var_delay'] = False
@@ -274,7 +276,7 @@ def default_tasks():
     DMRS90 = {}
     DMRS90['name'] = 'DMRS'
     DMRS90['rotation'] = 90
-    DMRS90['n_motion_dirs'] = 8
+    DMRS90['n_motion_dirs'] = 6
     DMRS90['n_cues'] = 0
     DMRS90['n_RFs'] = 1
     DMRS90['var_delay'] = False
@@ -286,7 +288,7 @@ def default_tasks():
     DMRS180 = {}
     DMRS180['name'] = 'DMRS'
     DMRS180['rotation'] = 180
-    DMRS180['n_motion_dirs'] = 8
+    DMRS180['n_motion_dirs'] = 6
     DMRS180['n_cues'] = 0
     DMRS180['n_RFs'] = 1
     DMRS180['var_delay'] = False
@@ -298,7 +300,7 @@ def default_tasks():
     DMRS270 = {}
     DMRS270['name'] = 'DMRS'
     DMRS270['rotation'] = 270
-    DMRS270['n_motion_dirs'] = 8
+    DMRS270['n_motion_dirs'] = 6
     DMRS270['n_cues'] = 0
     DMRS270['n_RFs'] = 1
     DMRS270['var_delay'] = False
@@ -309,7 +311,7 @@ def default_tasks():
 
     DMC = {}
     DMC['name'] = 'DMC'
-    DMC['n_motion_dirs'] = 8
+    DMC['n_motion_dirs'] = 6
     DMC['n_cues'] = 0
     DMC['n_RFs'] = 1
     DMC['var_delay'] = False
@@ -320,7 +322,7 @@ def default_tasks():
 
     delay_go = {}
     delay_go['name'] = 'DelayGo'
-    delay_go['n_motion_dirs'] = 8
+    delay_go['n_motion_dirs'] = 6
     delay_go['n_cues'] = 1
     delay_go['n_RFs'] = 1
     delay_go['var_delay'] = False

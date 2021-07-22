@@ -43,3 +43,14 @@ EE_topo: 2.
 EI_topo: 1.
 IE_topo: 1.
 II_topo: 0.
+
+
+mod_EE_weight: 0.001
+mod_EI_weight: 0.001
+mod_IE_weight: 0.001
+mod_II_weight: 0.001
+
+EE_topo_mod: 0.
+EI_topo_mod: 0.
+IE_topo_mod: 0.
+II_topo_mod: 0.
