@@ -150,7 +150,11 @@ class TaskManager:
                 'reward_matrix', 'sample', 'rule']
             return tuple([trial_info[k].squeeze() for k in keys])
 
-        return trial_info
+        keys = ['neural_input', 'desired_output', 'train_mask',
+            'reward_matrix', 'sample', 'rule']
+        return tuple([trial_info[k].squeeze() for k in keys])
+
+        #return trial_info
 
     def generate_empty_trial_info(self, batch_size):
         # Generate an empty trial info dictionary to add other trials to, one-by-one
@@ -243,11 +247,17 @@ class TaskManager:
 
 def default_tasks():
 
-    generic_timing = {'dead_time'   : 300,
+    generic_timing = {'dead_time'   : 0,
                      'fix_time'     : 200,
                      'sample_time'  : 300,
                      'delay_time'   : 1000,
                      'test_time'    : 300}
+
+    monkey_timing = {'dead_time'    : 0,
+                     'fix_time'     : 500,
+                     'sample_time'  : 660,
+                     'delay_time'   : 1020,
+                     'test_time'    : 660}
 
     # Example of usage: DMS, DMRS, DMC, delay_go (all same extra params)
     DMS = {}
@@ -330,6 +340,7 @@ def default_tasks():
     delay_go['var_delay_max'] = 200
     delay_go['mask_duration'] = 60
     delay_go['timing'] = generic_timing
+
 
     task_list = [DMS, DMRS45, DMRS90, DMRS180, DMRS270, DMC, delay_go]
 

@@ -23,7 +23,7 @@ def decode_signal(X, y, timesteps, k_folds=4):
             ss.fit(X_tr)
             X_tr = ss.transform(X_tr)
             X_te = ss.transform(X_te)
-            svm = SVC(C=1.0, kernel='linear', max_iter=2000, decision_function_shape='ovr', shrinking=False, tol=1e-3).fit(X_tr, y_tr)
+            svm = SVC(C=1.0, kernel='linear', max_iter=1000, decision_function_shape='ovr', shrinking=False, tol=1e-3).fit(X_tr, y_tr)
             svm_acc[t, i] = svm.score(X_te, y_te)
 
     return np.mean(svm_acc, axis=-1)
