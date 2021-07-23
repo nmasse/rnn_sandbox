@@ -13,13 +13,14 @@ from TaskManager import TaskManager, default_tasks
 import yaml
 from tensorflow.keras.layers import Dense
 import time
+import uuid
 
-gpu_idx = 1
+gpu_idx = 0
 gpus = tf.config.experimental.list_physical_devices('GPU')
 tf.config.experimental.set_visible_devices(gpus[gpu_idx], 'GPU')
 tf.config.experimental.set_virtual_device_configuration(
     gpus[gpu_idx],
-    [tf.config.experimental.VirtualDeviceConfiguration(memory_limit=8000)])
+    [tf.config.experimental.VirtualDeviceConfiguration(memory_limit=5000)])
 #os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
 
 
@@ -132,10 +133,11 @@ class Actor:
 
 
 class Agent:
-    def __init__(self, args, rnn_params):
+    def __init__(self, args, rnn_params, param_ranges):
 
         self._args = args
         self._rnn_params = rnn_params
+        self._param_ranges = param_ranges
 
         tasks = default_tasks()
         stim = TaskManager(tasks, batch_size=args.batch_size, tf2=False)
@@ -176,25 +178,32 @@ class Agent:
 
 
 
-    def train(self, id):
+    def train(self, rnn_params):
 
+        save_fn = os.path.join(self._args.save_path, 'results_'+str(uuid.uuid4())+'.pkl')
         results = {
             'args': self._args,
-            'rnn_params': self._rnn_params,
+            'rnn_params': rnn_params,
             'loss': [],
             'task_accuracy': [],
         }
 
 
-        self.actor.RNN.generate_new_weights(self._rnn_params)
+        self.actor.RNN.generate_new_weights(rnn_params)
 
-        print('Determing steady-stae values...')
+        print('Determing steady-state values...')
         h_init, m_init, h = self.actor.determine_steady_state(self.training_batches[0])
         results['initial_mean_h'] = np.mean(h_init)
+        print(f"Steady-state activity {results['initial_mean_h']:2.4f}")
+
+        if results['initial_mean_h'] < 0.01 or results['initial_mean_h'] > 1:
+            pickle.dump(results, open(save_fn, 'wb'))
+            print('Aborting...')
+            return False
 
         print('Determing initial sample decoding accuracy...')
         h = self.actor.run_batch(self.dms_batch, h_init, m_init)
-        results['sample_decode_time'] = (200+300+980) // self._rnn_params.dt
+        results['sample_decode_time'] = (200+300+980) // rnn_params.dt
         results['sample_decoding'] = analysis.decode_signal(
                             np.float32(h),
                             np.int32(self.dms_batch[4]),
@@ -219,10 +228,30 @@ class Agent:
             results['task_accuracy'].append(accuracy)
 
 
-        save_fn = 'results/results'+str(id)+'.pkl'
         pickle.dump(results, open(save_fn, 'wb'))
         print(results)
         self.actor.reset_optimizer()
+        return True
+
+
+
+    def main_loop(self):
+
+        full_runs = 0
+        for i in range(1000000):
+            print(f'Main loop iteration {i} - Full runs {full_runs}')
+            #print('Randomly selecting new network parameters...')
+            params =  {k:v for k,v in vars(self._rnn_params).items()}
+            for k, v in param_ranges.items():
+                new_value = np.random.uniform(v[0], v[1])
+                #print(k, v, new_value)
+                params[k] = new_value
+
+            success = self.train(argparse.Namespace(**params))
+            if success:
+                full_runs += 1
+
+
 
 
 
@@ -238,6 +267,7 @@ def define_dependent_params(params, stim):
 
 
 
+
 parser = argparse.ArgumentParser('')
 parser.add_argument('--n_iterations', type=int, default=100)
 parser.add_argument('--batch_size', type=int, default=1024)
@@ -245,6 +275,8 @@ parser.add_argument('--n_stim_batches', type=int, default=20)
 parser.add_argument('--learning_rate', type=float, default=0.005)
 parser.add_argument('--n_learning_rate_ramp', type=int, default=10)
 parser.add_argument('--rnn_params_fn', type=str, default='./rnn_params/base_rnn_mod.yaml')
+parser.add_argument('--params_range_fn', type=str, default='./rnn_params/param_ranges.yaml')
+parser.add_argument('--save_path', type=str, default='results')
 
 args = parser.parse_args()
 
@@ -254,11 +286,14 @@ for k, v in vars(args).items():
 print()
 
 rnn_params = yaml.load(open(args.rnn_params_fn), Loader=yaml.FullLoader)
+param_ranges = yaml.load(open(args.params_range_fn), Loader=yaml.FullLoader)
+"""
 rnn_params = argparse.Namespace(**rnn_params)
 print('RNN parameters:')
-for k, v in vars(rnn_params).items():
+for k, v in vars(rnn_params.items():
     print(k,':', v)
 print()
-
-agent = Agent(args, rnn_params)
-agent.train(0)
+"""
+rnn_params = argparse.Namespace(**rnn_params)
+agent = Agent(args, rnn_params, param_ranges)
+agent.main_loop()
