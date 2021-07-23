@@ -171,8 +171,9 @@ class Agent:
             plt.colorbar()
             plt.show()
             """
-            loss, h = self.actor.train_SL(batch)
-            print('Train', j, np.round(loss, 5), np.round(np.mean(h),4))
+            if j < self._args.n_iterations:
+                loss, h = self.actor.train_SL(batch)
+                print('Train', j, np.round(loss, 5), np.round(np.mean(h),4))
             """
             plt.plot(np.mean(h,axis=(0,2)))
             plt.show()
@@ -208,7 +209,7 @@ for k, v in vars(rnn_params).items():
 print()
 
 if args.test_stim:
-    tasks = default_tasks()
+    tasks = default_tasks()[:1]
     stim = TaskManager(tasks, batch_size=args.batch_size, tf2=True)
 
     # Adjust n input units / n outputs (actions) as per stim 

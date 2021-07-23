@@ -107,7 +107,6 @@ class TaskManager:
                     (), # sample_dir
                     ())) # rule
 
-            #self.dataset = self.dataset.cache()
             self.dataset = self.dataset.batch(self.batch_size)
             self.dataset = self.dataset.prefetch(tf.data.experimental.AUTOTUNE)
 
@@ -241,13 +240,21 @@ class TaskManager:
 
 def default_tasks():
 
-    generic_timing = {'dead_time'    : 0,
+    generic_timing = {'dead_time'   : 100,
                      'fix_time'     : 500,
                      'sample_time'  : 500,
                      'delay_time'   : 1000,
                      'test_time'    : 500}
+    pro_ret_timing = copy.copy(generic_timing)
+    pro_ret_timing['cue_time'] = 300
 
-    # Example of usage: DMS, DMRS, DMC, delay_go (all same extra params)
+    nick_timing = {'dead_time'    : 0,
+                   'fix_time'     : 500,
+                   'sample_time'  : 667,
+                   'delay_time'   : 1013,
+                   'test_time'    : 667}
+
+    # Example of usage: DMS, DMRS, DMC, DelayGo (all same extra params)
     DMS = {}
     DMS['name'] = 'DMS'
     DMS['n_motion_dirs'] = 8
@@ -318,18 +325,69 @@ def default_tasks():
     DMC['mask_duration'] = 50
     DMC['timing'] = generic_timing
 
-    delay_go = {}
-    delay_go['name'] = 'DelayGo'
-    delay_go['n_motion_dirs'] = 8
-    delay_go['n_cues'] = 1
-    delay_go['n_RFs'] = 1
-    delay_go['var_delay'] = False
-    delay_go['n_output'] = 8
-    delay_go['var_delay_max'] = 200
-    delay_go['mask_duration'] = 50
-    delay_go['timing'] = generic_timing
+    DelayGo = {}
+    DelayGo['name'] = 'DelayGo'
+    DelayGo['n_motion_dirs'] = 8
+    DelayGo['n_cues'] = 1
+    DelayGo['n_RFs'] = 1
+    DelayGo['var_delay'] = False
+    DelayGo['n_output'] = 8
+    DelayGo['var_delay_max'] = 200
+    DelayGo['mask_duration'] = 50
+    DelayGo['timing'] = generic_timing
 
-    task_list = [DMS, DMRS45, DMRS90, DMRS180, DMRS270, DMC, delay_go]
+    ABBA = {}
+    ABBA['name'] = 'ABBA'
+    ABBA['n_motion_dirs'] = 8
+    ABBA['n_cues'] = 1
+    ABBA['n_RFs'] = 1
+    ABBA['var_delay'] = False
+    ABBA['n_output'] = 3
+    ABBA['var_delay_max'] = 200
+    ABBA['mask_duration'] = 50
+    ABBA['n_tests'] = 3
+    ABBA['match_test_prob'] = 0.5
+    ABBA['repeat_pct'] = 0.5
+    ABBA['timing'] = generic_timing
+
+    ABCA = {}
+    ABCA['name'] = 'ABCA'
+    ABCA['n_motion_dirs'] = 8
+    ABCA['n_cues'] = 1
+    ABCA['n_RFs'] = 1
+    ABCA['var_delay'] = False
+    ABCA['n_output'] = 3
+    ABCA['var_delay_max'] = 200
+    ABCA['mask_duration'] = 50
+    ABCA['n_tests'] = 3
+    ABCA['match_test_prob'] = 0.5
+    ABCA['repeat_pct'] = 0.0
+    ABCA['timing'] = generic_timing
+
+    ProRetroWM = {}
+    ProRetroWM['name'] = 'ProRetroWM'
+    ProRetroWM['n_motion_dirs'] = 8
+    ProRetroWM['n_cues'] = 2
+    ProRetroWM['n_RFs'] = 2
+    ProRetroWM['var_delay'] = False
+    ProRetroWM['n_output'] = 8
+    ProRetroWM['var_delay_max'] = 200
+    ProRetroWM['mask_duration'] = 50
+    ProRetroWM['timing'] = pro_ret_timing
+
+    NickDMS = {}
+    NickDMS['name'] = 'NickDMS'
+    NickDMS['n_motion_dirs'] = 6
+    NickDMS['n_cues'] = 1
+    NickDMS['n_RFs'] = 1
+    NickDMS['var_delay'] = False
+    NickDMS['n_output'] = 3
+    NickDMS['var_delay_max'] = 200
+    NickDMS['mask_duration'] = 50
+    NickDMS['timing'] = nick_timing
+
+
+    task_list = [DMS, DMRS45, DMRS90, DMRS180, DMRS270, DMC, DelayGo, ABBA, ABCA, ProRetroWM, NickDMS]
 
     return task_list
 
