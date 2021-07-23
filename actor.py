@@ -6,11 +6,14 @@ from tensorflow.keras.layers import Dense
 
 
 class Actor:
-    def __init__(self, args, rnn_params, learning_type='supervised'):
+    def __init__(self, args, rnn_params, saved_model_path=None, learning_type='supervised'):
         self._args = args
         self._rnn_params = rnn_params
         self.learning_type = learning_type
-        self.create_model()
+        if rnn_params is not None:
+            self.create_model()
+        else:
+            self.model = tf.keras.models.load_model(saved_model_path)
         self.opt = tf.keras.optimizers.Adam(args.learning_rate, epsilon=1e-07)
 
 
