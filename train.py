@@ -15,7 +15,7 @@ from tensorflow.keras.layers import Dense
 import time
 import uuid
 
-gpu_idx = 0
+gpu_idx = 1
 gpus = tf.config.experimental.list_physical_devices('GPU')
 tf.config.experimental.set_visible_devices(gpus[gpu_idx], 'GPU')
 tf.config.experimental.set_virtual_device_configuration(
@@ -140,6 +140,7 @@ class Agent:
         self._param_ranges = param_ranges
 
         tasks = default_tasks()
+        self.n_tasks = len(tasks)
         stim = TaskManager(tasks, batch_size=args.batch_size, tf2=False)
 
         rnn_params = define_dependent_params(rnn_params, stim)
@@ -193,23 +194,25 @@ class Agent:
 
         print('Determing steady-state values...')
         h_init, m_init, h = self.actor.determine_steady_state(self.training_batches[0])
-        results['initial_mean_h'] = np.mean(h_init)
-        print(f"Steady-state activity {results['initial_mean_h']:2.4f}")
+        results['steady_state_h'] = np.mean(h_init)
+        print(f"Steady-state activity {results['steady_state_h']:2.4f}")
 
-        if results['initial_mean_h'] < 0.01 or results['initial_mean_h'] > 1:
+        if results['steady_state_h'] < 0.01 or results['steady_state_h'] > 1:
             pickle.dump(results, open(save_fn, 'wb'))
             print('Aborting...')
             return False
 
         print('Determing initial sample decoding accuracy...')
         h = self.actor.run_batch(self.dms_batch, h_init, m_init)
-        results['sample_decode_time'] = (200+300+980) // rnn_params.dt
+        results['sample_decode_time'] = [(200+300+600)//rnn_params.dt, (200+300+980)//rnn_params.dt]
         results['sample_decoding'] = analysis.decode_signal(
                             np.float32(h),
                             np.int32(self.dms_batch[4]),
-                            [results['sample_decode_time']])[0]
+                            results['sample_decode_time'])
+        results['initial_mean_h'] = np.mean(h.numpy(), axis = (0,2))
 
-        print(f"Decoding accuracy {results['sample_decoding']:1.3f}")
+        sd = results['sample_decoding']
+        print(f"Decoding accuracy {sd[0]:1.3f}, {sd[1]:1.3f}")
 
         print('Starting main training loop...')
         for j in range(self._args.n_iterations):
@@ -222,14 +225,19 @@ class Agent:
 
             loss, h, policy = self.actor.train(batch, h_init, m_init, learning_rate)
 
-            accuracy = analysis.accuracy_SL(policy, np.float32(batch[1]), np.float32(batch[2]))
-            print(f'Iteration {j} Loss {loss:1.4f} Accuracy {accuracy:1.3f} Mean activity {np.mean(h):2.4f} Time {time.time()-t0:2.2f}')
+            accuracies = analysis.accuracy_all_tasks(
+                                    np.float32(policy),
+                                    np.float32(batch[1]),
+                                    np.float32(batch[2]),
+                                    np.int32(batch[5]),
+                                    list(range(self.n_tasks)))
+            print(f'Iteration {j} Loss {loss:1.4f} Accuracy {np.mean(accuracies):1.3f} Mean activity {np.mean(h):2.4f} Time {time.time()-t0:2.2f}')
             results['loss'].append(loss.numpy())
-            results['task_accuracy'].append(accuracy)
-
+            results['task_accuracy'].append(accuracies)
+            results['final_mean_h'] = np.mean(h.numpy(), axis = (0,2))
+            print(accuracies)
 
         pickle.dump(results, open(save_fn, 'wb'))
-        print(results)
         self.actor.reset_optimizer()
         return True
 
@@ -271,12 +279,12 @@ def define_dependent_params(params, stim):
 parser = argparse.ArgumentParser('')
 parser.add_argument('--n_iterations', type=int, default=100)
 parser.add_argument('--batch_size', type=int, default=1024)
-parser.add_argument('--n_stim_batches', type=int, default=20)
+parser.add_argument('--n_stim_batches', type=int, default=25)
 parser.add_argument('--learning_rate', type=float, default=0.005)
 parser.add_argument('--n_learning_rate_ramp', type=int, default=10)
 parser.add_argument('--rnn_params_fn', type=str, default='./rnn_params/base_rnn_mod.yaml')
 parser.add_argument('--params_range_fn', type=str, default='./rnn_params/param_ranges.yaml')
-parser.add_argument('--save_path', type=str, default='results')
+parser.add_argument('--save_path', type=str, default='results3')
 
 args = parser.parse_args()
 

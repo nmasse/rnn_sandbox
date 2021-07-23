@@ -28,6 +28,17 @@ def decode_signal(X, y, timesteps, k_folds=4):
 
     return np.mean(svm_acc, axis=-1)
 
+
+def accuracy_all_tasks(policy, labels, mask, rule, possible_rules):
+
+    accuracies = []
+    for i in possible_rules:
+        idx = np.where(rule == i)[0]
+        acc = accuracy_SL(policy[idx, ...], labels[idx, ...], mask[idx, ...])
+        accuracies.append(acc)
+
+    return accuracies
+
 def accuracy_SL(policy, labels, mask):
 
     labels_amax = np.argmax(labels,axis=-1)
