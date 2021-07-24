@@ -23,7 +23,6 @@ class Task(object):
         # Store basic network shape information
         self.n_input        = shape['n_input']
         self.n_output       = shape['n_output']
-        self.trial_length   = shape['trial_length']
         self.n_motion_tuned = shape['n_motion_tuned']
         self.n_fix_tuned    = shape['n_fix_tuned']
         self.n_rule_tuned   = shape['n_rule_tuned']
@@ -42,6 +41,7 @@ class Task(object):
         self.n_test               = misc['n_test']
         self.var_delay_max        = misc['var_delay_max'] // dt
         self.mask_duration        = misc['mask_duration'] // dt
+        self.trial_length         = misc['trial_length'] // dt
 
         # Bind RL info
         self.fix_break_penalty     = misc['fix_break_penalty']
