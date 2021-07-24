@@ -18,10 +18,11 @@ import uuid
 gpu_idx = 0
 gpus = tf.config.experimental.list_physical_devices('GPU')
 tf.config.experimental.set_visible_devices(gpus[gpu_idx], 'GPU')
+"""
 tf.config.experimental.set_virtual_device_configuration(
     gpus[gpu_idx],
     [tf.config.experimental.VirtualDeviceConfiguration(memory_limit=5000)])
-
+"""
 #os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
 
 
@@ -40,9 +41,8 @@ class Agent:
         self.actor = Actor(args, rnn_params, learning_type='supervised')
 
         self.training_batches = [stim.generate_batch(args.batch_size, to_exclude=[self.n_tasks - 1]) for _ in range(args.n_stim_batches)]
-        self.dms_batch = stim.generate_batch(args.batch_size, rule=0)
         self.monkey_dms_batch = stim.generate_batch(args.batch_size, rule=self.n_tasks - 1, include_test=True)
-
+        self.sample_decode_time = [(500+660+500)//rnn_params.dt, (500+660+1000)//rnn_params.dt]
 
         print('Trainable variables...')
         for v in self.actor.model.trainable_variables:
@@ -81,6 +81,7 @@ class Agent:
             'rnn_params': rnn_params,
             'loss': [],
             'task_accuracy': [],
+            'sample_decode_time': self.sample_decode_time
         }
 
 
@@ -96,17 +97,21 @@ class Agent:
             print('Aborting...')
             return False
 
+
         print('Determing initial sample decoding accuracy...')
-        h = self.actor.run_batch(self.dms_batch, h_init, m_init)
-        results['sample_decode_time'] = [(200+300+600)//rnn_params.dt, (200+300+980)//rnn_params.dt]
+        h = self.actor.run_batch(self.monkey_dms_batch, h_init, m_init)
         results['sample_decoding'] = analysis.decode_signal(
                             np.float32(h),
-                            np.int32(self.dms_batch[4][:,0]),
-                            results['sample_decode_time'])
-        results['initial_mean_h'] = np.mean(h.numpy(), axis = (0,2))
-
+                            np.int32(self.monkey_dms_batch[4]),
+                            self.sample_decode_time)
         sd = results['sample_decoding']
         print(f"Decoding accuracy {sd[0]:1.3f}, {sd[1]:1.3f}")
+
+        print('Calculating average spike rates...')
+        results['initial_mean_h'] = np.mean(h.numpy(), axis = (0,2))
+        results['initial_monkey_DMS_data'] = analysis.average_frs_by_condition(h.numpy(),
+            self.monkey_dms_batch[-3], self.monkey_dms_batch[-1])
+
 
         print('Starting main training loop...')
         for j in range(self._args.n_iterations):
@@ -130,10 +135,11 @@ class Agent:
             results['loss'].append(loss.numpy())
             results['final_mean_h'] = np.mean(h.numpy(), axis = (0,2))
 
-            # Generate activity on monkeyDMS batch
-            h = self.actor.run_batch(self.monkey_dms_batch[:-1], h_init, m_init)
-            results['monkey_DMS_data'] = analysis.average_frs_by_condition(h.numpy(), 
-                self.monkey_dms_batch[-3][:,0], self.monkey_dms_batch[-1][:,0])
+        # Generate activity on monkeyDMS batch
+        h = self.actor.run_batch(self.monkey_dms_batch, h_init, m_init)
+        results['final_monkey_DMS_data'] = analysis.average_frs_by_condition(h.numpy(),
+            self.monkey_dms_batch[-3], self.monkey_dms_batch[-1])
+
 
 
         pickle.dump(results, open(save_fn, 'wb'))
@@ -147,17 +153,14 @@ class Agent:
         full_runs = 0
         for i in range(1000000):
             print(f'Main loop iteration {i} - Full runs {full_runs}')
-            #print('Randomly selecting new network parameters...')
             params =  {k:v for k,v in vars(self._rnn_params).items()}
             for k, v in param_ranges.items():
                 new_value = np.random.uniform(v[0], v[1])
-                #print(k, v, new_value)
                 params[k] = new_value
 
             success = self.train(argparse.Namespace(**params))
             if success:
                 full_runs += 1
-
 
 
 
@@ -176,14 +179,14 @@ def define_dependent_params(params, stim):
 
 
 parser = argparse.ArgumentParser('')
-parser.add_argument('--n_iterations', type=int, default=100)
+parser.add_argument('--n_iterations', type=int, default=1000)
 parser.add_argument('--batch_size', type=int, default=1024)
-parser.add_argument('--n_stim_batches', type=int, default=25)
+parser.add_argument('--n_stim_batches', type=int, default=50)
 parser.add_argument('--learning_rate', type=float, default=0.005)
 parser.add_argument('--n_learning_rate_ramp', type=int, default=10)
 parser.add_argument('--rnn_params_fn', type=str, default='./rnn_params/base_rnn_mod.yaml')
-parser.add_argument('--params_range_fn', type=str, default='./rnn_params/param_ranges_no_normalization.yaml')
-parser.add_argument('--save_path', type=str, default='results_no_normalization')
+parser.add_argument('--params_range_fn', type=str, default='./rnn_params/param_ranges.yaml')
+parser.add_argument('--save_path', type=str, default='./results/run_simple')
 
 args = parser.parse_args()
 
