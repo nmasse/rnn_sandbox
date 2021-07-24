@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 import layers
 import analysis
 from actor import Actor
-from TaskManager import TaskManager, default_tasks, monkey_dms_task
+from TaskManager import TaskManager, default_tasks
 import yaml
 import time
 import uuid
