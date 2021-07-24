@@ -193,7 +193,7 @@ def define_dependent_params(params, stim):
 parser = argparse.ArgumentParser('')
 parser.add_argument('--n_iterations', type=int, default=100)
 parser.add_argument('--batch_size', type=int, default=1024)
-parser.add_argument('--n_stim_batches', type=int, default=5)
+parser.add_argument('--n_stim_batches', type=int, default=25)
 parser.add_argument('--learning_rate', type=float, default=0.005)
 parser.add_argument('--n_learning_rate_ramp', type=int, default=10)
 parser.add_argument('--save_frs_by_condition', type=bool, default=False)

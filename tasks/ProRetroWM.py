@@ -86,7 +86,7 @@ class ProRetroWM(Task.Task):
             # Generate outputs
             trial_info['desired_output'][i, range(0, test_bounds[0]), 0] = 1.
             if not catch:
-                trial_info['desired_output'][i, range(*test_bounds), -cued_dir] = 1.
+                trial_info['desired_output'][i, range(*test_bounds), resp_idx] = 1.
             else:
                 trial_info['desired_output'][i, range(*test_bounds), 0] = 1.
 
@@ -95,7 +95,7 @@ class ProRetroWM(Task.Task):
             reward_matrix[range(response_bounds[0]), 1:] = self.fix_break_penalty
             if not catch:
                 reward_matrix[range(*response_bounds), 1:] = self.wrong_choice_penalty
-                reward_matrix[range(*response_bounds), -cued_dir] = self.correct_choice_reward
+                reward_matrix[range(*response_bounds), resp_idx] = self.correct_choice_reward
                 reward_matrix[-1, 0] = self.fix_break_penalty
             else:
                 reward_matrix[-1, 0] = self.correct_choice_reward

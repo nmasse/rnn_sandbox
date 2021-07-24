@@ -82,7 +82,7 @@ class DelayGo(Task.Task):
             reward_matrix[range(response_bounds[0]), 1:] = self.fix_break_penalty
             if not catch:
                 reward_matrix[range(*response_bounds), 1:] = self.wrong_choice_penalty
-                reward_matrix[range(*response_bounds), -sample_dir] = self.correct_choice_reward
+                reward_matrix[range(*response_bounds), resp_idx] = self.correct_choice_reward
                 reward_matrix[-1, 0] = self.fix_break_penalty
             else:
                 reward_matrix[-1, 0] = self.correct_choice_reward

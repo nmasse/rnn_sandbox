@@ -162,7 +162,7 @@ class TaskManager:
 
 
     def generate_empty_trial_info(self, batch_size, to_exclude, include_test=False):
-        batch_trial_length = max([t.trial_length for j, t in enumerate(self.task_list) 
+        batch_trial_length = max([t.trial_length for j, t in enumerate(self.task_list)
             if j not in to_exclude])
 
         # Generate an empty trial info dictionary to add other trials to, one-by-one
@@ -398,7 +398,8 @@ def default_tasks():
     DelayGo['n_cues'] = 1
     DelayGo['n_RFs'] = 1
     DelayGo['var_delay'] = False
-    DelayGo['n_output'] = 6
+    DelayGo['categorization'] = True
+    DelayGo['n_output'] = 3
     DelayGo['var_delay_max'] = 200
     DelayGo['mask_duration'] = 60
     DelayGo['n_sample'] = 1
@@ -456,7 +457,8 @@ def default_tasks():
     ProRetroWM['n_RFs'] = ProRetroWM['n_sample']
     ProRetroWM['n_test'] = 1
     ProRetroWM['var_delay'] = False
-    ProRetroWM['n_output'] = 6
+    ProRetroWM['categorization'] = True
+    ProRetroWM['n_output'] = 3
     ProRetroWM['var_delay_max'] = 200
     ProRetroWM['mask_duration'] = 60
     ProRetroWM['trial_length'] = 0
@@ -480,7 +482,7 @@ def default_tasks():
     MonkeyDMS['timing'] = monkey_timing
 
     task_list = [DMS, DMS_distractor, DMRS45, DMRS90, DMRS180, DMRS270, DMC, \
-        DelayGo, ProRetroWM, MonkeyDMS]
+        DelayGo, ProRetroWM]
 
 
     return task_list
