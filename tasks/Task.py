@@ -55,8 +55,9 @@ class Task(object):
                       'sample'          :  -np.ones((batch_size, self.n_sample), dtype=np.int8),
                       'test'            :  -np.ones((batch_size, self.n_test), dtype=np.int8),
                       'rule'            :  np.zeros((batch_size), dtype=np.int8),
-                      'match'           :  np.zeros((batch_size), dtype=np.int8),
-                      'catch'           :  np.zeros((batch_size), dtype=np.int8),
+                      'match'           :  np.full((batch_size), False), # dtype bool
+                      'catch'           :  np.full((batch_size), False), # dtype bool
+                      'retrospective'   :  np.full((batch_size), False), # dtype bool
                       'neural_input'    :  np.random.normal(self.input_mean, self.input_noise, 
                                                 size=(batch_size, self.trial_length, self.n_input)),
                       'reward_matrix'   :  np.zeros((batch_size, self.trial_length, self.n_output), dtype=np.float32),

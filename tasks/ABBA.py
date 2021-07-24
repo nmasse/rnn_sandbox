@@ -136,7 +136,7 @@ class ABBA(Task.Task):
             trial_info['sample'][i,0] = sample_dir
             trial_info['test'][i,:]   = np.int8(stim_dirs[1:])
             trial_info['rule'][i]   = self.rule_id
-            trial_info['catch'][i]  = catch
+            trial_info['catch'][i]  = bool(catch)
             timing_dict = {'fix_bounds'     : fix_bounds,
                            'sample_bounds'  : sample_bounds,
                            'delay_bounds'   : delay_bounds,

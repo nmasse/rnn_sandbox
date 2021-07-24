@@ -97,9 +97,10 @@ class ProRetroWM(Task.Task):
 
             # Record trial information
             trial_info['sample'][i,:] = sample_dirs
-            trial_info['catch'][i]  = catch
+            trial_info['catch'][i]  = bool(catch)
             trial_info['rule'][i]   = self.rule_id
             trial_info['cue'][i]    = test_cue
+            trial_info['retrospective'] = retrospective
             timing_dict = {'fix_bounds'     : fix_bounds,
                            'sample_bounds'  : sample_bounds,
                            'delay_bounds'   : delay_bounds,
