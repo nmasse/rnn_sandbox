@@ -14,12 +14,14 @@ import yaml
 import time
 import uuid
 
+
 gpu_idx = 0
 gpus = tf.config.experimental.list_physical_devices('GPU')
 tf.config.experimental.set_visible_devices(gpus[gpu_idx], 'GPU')
 tf.config.experimental.set_virtual_device_configuration(
     gpus[gpu_idx],
     [tf.config.experimental.VirtualDeviceConfiguration(memory_limit=5000)])
+
 #os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
 
 
@@ -122,7 +124,7 @@ class Agent:
                                     np.float32(batch[1]),
                                     np.float32(batch[2]),
                                     np.int32(batch[5]),
-                                    list(range(self.n_tasks)))
+                                    np.arange(self.n_tasks - 1))
             print(f'Iteration {j} Loss {loss:1.4f} Accuracy {np.mean(accuracies):1.3f} Mean activity {np.mean(h):2.4f} Time {time.time()-t0:2.2f}')
             results['task_accuracy'].append(accuracies)
             results['loss'].append(loss.numpy())
@@ -130,8 +132,9 @@ class Agent:
 
             # Generate activity on monkeyDMS batch
             h = self.actor.run_batch(self.monkey_dms_batch[:-1], h_init, m_init)
-            results['monkey_DMS_data'] = analysis.average_frs_by_condition(h, 
+            results['monkey_DMS_data'] = analysis.average_frs_by_condition(h.numpy(), 
                 self.monkey_dms_batch[-3][:,0], self.monkey_dms_batch[-1][:,0])
+
 
         pickle.dump(results, open(save_fn, 'wb'))
         self.actor.reset_optimizer()
@@ -183,6 +186,9 @@ parser.add_argument('--params_range_fn', type=str, default='./rnn_params/param_r
 parser.add_argument('--save_path', type=str, default='results_no_normalization')
 
 args = parser.parse_args()
+
+if not os.path.exists(args.save_path):
+    os.makedirs(args.save_path)
 
 print('Arguments:')
 for k, v in vars(args).items():

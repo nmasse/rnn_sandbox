@@ -48,12 +48,13 @@ def accuracy_SL(policy, labels, mask):
     return np.sum(task_mask * (labels_amax == policy_amax)) / np.sum(task_mask)
 
 def average_frs_by_condition(h, sample, test):
+    # H: B x T x N
     # Identify sample/test conditions
     sample_rng = np.unique(sample)
     test_rng   = np.unique(test)
     conditions = np.hstack((sample.squeeze()[:,np.newaxis], 
         test.squeeze()[:,np.newaxis]))
-    unique_conds = np.unique(conditions, axis=1)
+    unique_conds = np.unique(conditions, axis=0)
 
     # Average activity of all neurons over trials with 
     # each unique combination of sample/test
@@ -61,5 +62,4 @@ def average_frs_by_condition(h, sample, test):
     for j, cond in enumerate(unique_conds):
         rel_trials    = np.where((conditions == cond).all(1))[0]
         avg_fr[:,j,:] = np.mean(h[rel_trials,:,:], axis=0).T
-
     return avg_fr, unique_conds
