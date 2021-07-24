@@ -80,7 +80,6 @@ class TaskManager:
                        self.n_cue_tuned    + \
                        self.n_fix_tuned
         self.n_output     = np.sum(np.unique([t['n_output'] for t in task_list]))
-        self.trial_length = max([t['trial_length'] // self.dt for t in task_list])
 
         # Build tuning, shape
         self.tuning = self.create_tuning_functions()
@@ -145,7 +144,7 @@ class TaskManager:
         else:
             # Get empty trial info dictionary, then write its elements,
             # one at a time
-            trial_info = self.generate_empty_trial_info(batch_size, include_test)
+            trial_info = self.generate_empty_trial_info(batch_size, to_exclude, include_test)
             for i in range(batch_size):
                 rule = np.random.choice(np.setdiff1d(np.arange(self.n_rule_tuned), to_exclude))
                 trial_info = self.write_trial(trial_info,
@@ -162,15 +161,18 @@ class TaskManager:
         return tuple([trial_info[k].squeeze() for k in keys])
 
 
-    def generate_empty_trial_info(self, batch_size, include_test=False):
+    def generate_empty_trial_info(self, batch_size, to_exclude, include_test=False):
+        batch_trial_length = max([t.trial_length for j, t in enumerate(self.task_list) 
+            if j not in to_exclude])
+
         # Generate an empty trial info dictionary to add other trials to, one-by-one
-        trial_info = {'desired_output'  :  np.zeros((batch_size, self.trial_length, self.n_output), dtype=np.float32),
-                      'train_mask'      :  np.ones((batch_size, self.trial_length), dtype=np.float32),
+        trial_info = {'desired_output'  :  np.zeros((batch_size, batch_trial_length, self.n_output), dtype=np.float32),
+                      'train_mask'      :  np.ones((batch_size, batch_trial_length), dtype=np.float32),
                       'rule'            :  np.zeros((batch_size), dtype=np.int8),
                       'neural_input'    :  np.random.normal(self.input_mean, self.input_noise,
-                                                size=(batch_size, self.trial_length, self.n_input)),
+                                                size=(batch_size, batch_trial_length, self.n_input)),
                       'sample'          :  -np.ones((batch_size, self.n_sample), dtype=np.int8),
-                      'reward_matrix'   :  np.zeros((batch_size, self.trial_length, self.n_output), dtype=np.float32),
+                      'reward_matrix'   :  np.zeros((batch_size, batch_trial_length, self.n_output), dtype=np.float32),
                       'retrospective'   :  np.full((batch_size), False),
                       'timing'          :  [],
                       'task_specific'   :  []}
@@ -196,7 +198,6 @@ class TaskManager:
         shape = {}
         shape['n_input']        = self.n_input
         shape['n_output']       = self.n_output
-        shape['trial_length']   = self.trial_length
         shape['n_motion_tuned'] = self.n_motion_tuned
         shape['n_fix_tuned']    = self.n_fix_tuned
         shape['n_rule_tuned']   = self.n_rule_tuned
@@ -479,7 +480,7 @@ def default_tasks():
     MonkeyDMS['timing'] = monkey_timing
 
     task_list = [DMS, DMS_distractor, DMRS45, DMRS90, DMRS180, DMRS270, DMC, \
-        DelayGo, ABBA, ABCA, ProRetroWM, MonkeyDMS]
+        DelayGo, ProRetroWM, MonkeyDMS]
 
 
     return task_list
@@ -490,5 +491,8 @@ if __name__ == "__main__":
     # Pull all task_list together
     task_list = default_tasks()
     tm    = TaskManager(task_list, batch_size=512)
+    b = tm.generate_batch(512, to_exclude=[len(task_list) - 1])
+    for i in b:
+        print(i.shape)
     for rule_id in range(len(task_list)):
         tm.visualize_task(rule_id)
