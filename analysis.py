@@ -10,6 +10,9 @@ from sklearn.svm import SVC
 
 
 def decode_signal(X, y, timesteps, k_folds=4):
+    print(y.shape, y.ndim)
+    if y.ndim==2:
+        y = y[:,0]
     ''' Set up decoder, x-validate via k folds'''
     svm_acc = np.zeros((len(timesteps), k_folds))
     skf = StratifiedKFold(n_splits=k_folds)
@@ -50,13 +53,18 @@ def accuracy_SL(policy, labels, mask):
 def average_frs_by_condition(h, sample, test):
     # H: B x T x N
     # Identify sample/test conditions
+    if sample.ndim==2:
+        sample = sample[:,0]
+    if test.ndim==2:
+        test = test[:,0]
     sample_rng = np.unique(sample)
     test_rng   = np.unique(test)
-    conditions = np.hstack((sample.squeeze()[:,np.newaxis], 
+    print(sample.shape, test.shape, sample.ndim, test.ndim)
+    conditions = np.hstack((sample.squeeze()[:,np.newaxis],
         test.squeeze()[:,np.newaxis]))
     unique_conds = np.unique(conditions, axis=0)
 
-    # Average activity of all neurons over trials with 
+    # Average activity of all neurons over trials with
     # each unique combination of sample/test
     avg_fr = np.zeros((h.shape[2], len(unique_conds), h.shape[1])) # neur x cond x timestep
     for j, cond in enumerate(unique_conds):
