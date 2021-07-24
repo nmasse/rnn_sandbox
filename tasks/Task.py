@@ -38,6 +38,8 @@ class Task(object):
         self.n_motion_dirs        = misc['n_motion_dirs']
         self.n_RFs                = misc['n_RFs']
         self.n_cues               = misc['n_cues']
+        self.n_sample             = misc['n_sample']
+        self.n_test               = misc['n_test']
         self.var_delay_max        = misc['var_delay_max'] // dt
         self.mask_duration        = misc['mask_duration'] // dt
 
@@ -50,8 +52,8 @@ class Task(object):
 
         trial_info = {'desired_output'  :  np.zeros((batch_size, self.trial_length, self.n_output), dtype=np.float32),
                       'train_mask'      :  np.ones((batch_size, self.trial_length), dtype=np.float32),
-                      'sample'          :  np.zeros((batch_size), dtype=np.int8),
-                      'test'            :  np.zeros((batch_size), dtype=np.int8),
+                      'sample'          :  -np.ones((batch_size, self.n_sample), dtype=np.int8),
+                      'test'            :  -np.ones((batch_size, self.n_test), dtype=np.int8),
                       'rule'            :  np.zeros((batch_size), dtype=np.int8),
                       'match'           :  np.zeros((batch_size), dtype=np.int8),
                       'catch'           :  np.zeros((batch_size), dtype=np.int8),

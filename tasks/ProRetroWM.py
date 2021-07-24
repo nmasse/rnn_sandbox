@@ -10,16 +10,6 @@ class ProRetroWM(Task.Task):
         # Initialize from superclass Task
         super().__init__(task_name, rule_id, var_delay, dt, tuning, timing, shape, misc)
 
-        # Bind specific parameters that are relevant for the ProRetroWM task
-        self.n_samples = misc['n_RFs']
-
-        # Check to confirm that # RFs is equal to # unique possible stimuli;
-        # if not, make it so, then reinitialize
-        if self.n_cues != self.n_RFs:
-            misc['n_RFs'] = self.n_cues
-            super().__init__(task_name, rule_id, var_delay, dt, tuning, 
-                timing, shape, misc)
-
 
     def _get_trial_info(self, batch_size):
         return super()._get_trial_info(batch_size)
@@ -35,13 +25,12 @@ class ProRetroWM(Task.Task):
 
         # Set up trial_info with ProRetroWM-specific entries, and amending the entry for sample
         trial_info = self._get_trial_info(batch_size)
-        trial_info['sample'] = np.ones((batch_size, self.n_samples), dtype=np.float32)
         trial_info['cue'] = np.zeros((batch_size), dtype=np.float32)
 
         for i in range(batch_size):
 
             # Determine sample stimulus, RFs, pro/retro
-            sample_dirs = np.random.choice(self.n_motion_dirs, self.n_samples, replace=False)
+            sample_dirs = np.random.choice(self.n_motion_dirs, self.n_sample, replace=False)
             test_cue    = np.random.choice(self.n_RFs)
             cued_dir    = sample_dirs[test_cue]
             catch       = np.random.rand() < self.catch_trial_pct
@@ -105,7 +94,7 @@ class ProRetroWM(Task.Task):
             trial_info['reward_matrix'][i,...] = reward_matrix
 
             # Record trial information
-            trial_info['sample'][i] = sample_dirs
+            trial_info['sample'][i,:] = sample_dirs
             trial_info['catch'][i]  = catch
             trial_info['rule'][i]   = self.rule_id
             trial_info['cue'][i]    = test_cue

@@ -11,7 +11,6 @@ class ABBA(Task.Task):
         super().__init__(task_name, rule_id, var_delay, dt, tuning, timing, shape, misc)
 
         # Store the max number of test stimuli
-        self.n_tests         = misc['n_tests']
         self.match_test_prob = misc['match_test_prob']
         self.repeat_pct      = misc['repeat_pct']
 
@@ -27,7 +26,6 @@ class ABBA(Task.Task):
 
         # Set up trial_info with ABBA-specific entries, and amending the entry for test
         trial_info = self._get_trial_info(batch_size)
-        trial_info['test']             = np.ones((batch_size, self.n_tests), dtype=np.float32)
         trial_info['repeat_test_stim'] = np.zeros((batch_size), dtype=np.int8)
 
         for i in range(batch_size):
@@ -35,7 +33,7 @@ class ABBA(Task.Task):
             # Determine sample stimulus, RFs
             sample_dir = np.random.randint(self.n_motion_dirs)
             sample_RF  = np.random.choice(self.n_RFs)
-            test_RFs   = np.random.choice(self.n_RFs, self.n_tests, replace=True)
+            test_RFs   = np.random.choice(self.n_RFs, self.n_test, replace=True)
             catch      = np.random.rand() < self.catch_trial_pct
 
             """
@@ -48,11 +46,11 @@ class ABBA(Task.Task):
             if test_mode:
                 # Used to analyze how sample and test neuronal and synaptic tuning relate
                 # not used to evaluate task accuracy
-                while len(stim_dirs) <= self.n_tests:
+                while len(stim_dirs) <= self.n_test:
                     q = np.random.randint(self.n_motion_dirs)
                     stim_dirs.append(q)
             else:
-                while len(stim_dirs) <= self.n_tests:
+                while len(stim_dirs) <= self.n_test:
                     # Handle repeated/non-repeated non-match test stimuli separately, as well
                     # as match stimuli 
                     if np.random.rand() < self.match_test_prob:
@@ -75,7 +73,7 @@ class ABBA(Task.Task):
             # Timings with multiple elements: delay and test
             delay_bounds    = [[sample_bounds[-1], sample_bounds[-1] + self.delay_time]]
             test_bounds     = [[delay_bounds[-1][1], delay_bounds[-1][1] + self.test_time]]
-            for _ in range(1, self.n_tests):
+            for _ in range(1, self.n_test):
                 delay_bounds.append([test_bounds[-1][1], test_bounds[-1][1] + self.delay_time])
                 test_bounds.append([delay_bounds[-1][1], delay_bounds[-1][1] + self.test_time])
             response_bounds = test_bounds
@@ -135,8 +133,8 @@ class ABBA(Task.Task):
             trial_info['reward_matrix'][i,...] = reward_matrix
 
             # Record trial information
-            trial_info['sample'][i] = sample_dir
-            trial_info['test'][i]   = np.int8(stim_dirs[1:])
+            trial_info['sample'][i,0] = sample_dir
+            trial_info['test'][i,:]   = np.int8(stim_dirs[1:])
             trial_info['rule'][i]   = self.rule_id
             trial_info['catch'][i]  = catch
             timing_dict = {'fix_bounds'     : fix_bounds,

@@ -99,7 +99,7 @@ class Agent:
         results['sample_decode_time'] = [(200+300+600)//rnn_params.dt, (200+300+980)//rnn_params.dt]
         results['sample_decoding'] = analysis.decode_signal(
                             np.float32(h),
-                            np.int32(self.dms_batch[4]),
+                            np.int32(self.dms_batch[4][:,0]),
                             results['sample_decode_time'])
         results['initial_mean_h'] = np.mean(h.numpy(), axis = (0,2))
 
@@ -131,7 +131,7 @@ class Agent:
             # Generate activity on monkeyDMS batch
             h = self.actor.run_batch(self.monkey_dms_batch[:-1], h_init, m_init)
             results['monkey_DMS_data'] = analysis.average_frs_by_condition(h, 
-                self.monkey_dms_batch[-3], self.monkey_dms_batch[-1])
+                self.monkey_dms_batch[-3][:,0], self.monkey_dms_batch[-1][:,0])
 
         pickle.dump(results, open(save_fn, 'wb'))
         self.actor.reset_optimizer()

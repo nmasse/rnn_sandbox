@@ -82,7 +82,7 @@ class DelayGo(Task.Task):
             trial_info['reward_matrix'][i,...] = reward_matrix
 
             # Record trial information
-            trial_info['sample'][i] = sample_dir
+            trial_info['sample'][i,0] = sample_dir
             trial_info['catch'][i] = catch
             trial_info['rule'][i] = self.rule_id
             timing_dict = {'fix_bounds'     : fix_bounds,

@@ -71,6 +71,10 @@ class TaskManager:
         self.n_motion_dirs = max([t['n_motion_dirs'] for t in task_list])
         self.n_motion_tuned *= self.n_RFs
 
+        # Determine maximum number of sample/test stimuli
+        self.n_sample = max([t['n_sample'] for t in task_list])
+        self.n_test   = max([t['n_test'] for t in task_list])
+
         self.n_input = self.n_motion_tuned + \
                        self.n_rule_tuned   + \
                        self.n_cue_tuned    + \
@@ -97,6 +101,8 @@ class TaskManager:
             misc['fix_break_penalty']     = self.fix_break_penalty
             misc['correct_choice_reward'] = self.correct_choice_reward
             misc['wrong_choice_penalty']  = self.wrong_choice_penalty
+            misc['n_sample']              = self.n_sample
+            misc['n_test']                = self.n_test
             task_args = [t['name'], i, t['var_delay'], self.dt, self.tuning, t['timing'], self.shape, misc]
             self.task_list.append(task(*task_args))
 
@@ -162,10 +168,12 @@ class TaskManager:
                       'rule'            :  np.zeros((batch_size), dtype=np.int8),
                       'neural_input'    :  np.random.normal(self.input_mean, self.input_noise,
                                                 size=(batch_size, self.trial_length, self.n_input)),
-                      'sample'          :  np.zeros((batch_size), dtype=np.int8),
+                      'sample'          :  -np.ones((batch_size, self.n_sample), dtype=np.int8),
                       'reward_matrix'   :  np.zeros((batch_size, self.trial_length, self.n_output), dtype=np.float32),
                       'timing'          : [],
                       'task_specific'   : []}
+        if include_test:
+            trial_info['test'] = -np.ones((batch_size, self.n_test), dtype=np.int8)
 
         return trial_info
 
@@ -282,6 +290,8 @@ def default_tasks():
     DMS['n_output'] = 3
     DMS['var_delay_max'] = 200
     DMS['mask_duration'] = 60
+    DMS['n_sample'] = 1
+    DMS['n_test'] = 1
     DMS['trial_length'] = sum(generic_timing.values())
     DMS['timing'] = generic_timing
 
@@ -295,6 +305,8 @@ def default_tasks():
     DMRS45['n_output'] = 3
     DMRS45['var_delay_max'] = 200
     DMRS45['mask_duration'] = 60
+    DMRS45['n_sample'] = 1
+    DMRS45['n_test'] = 1
     DMRS45['trial_length'] = sum(generic_timing.values())
     DMRS45['timing'] = generic_timing
 
@@ -308,6 +320,8 @@ def default_tasks():
     DMRS90['n_output'] = 3
     DMRS90['var_delay_max'] = 200
     DMRS90['mask_duration'] = 60
+    DMRS90['n_sample'] = 1
+    DMRS90['n_test'] = 1
     DMRS90['trial_length'] = sum(generic_timing.values())
     DMRS90['timing'] = generic_timing
 
@@ -321,6 +335,8 @@ def default_tasks():
     DMRS180['n_output'] = 3
     DMRS180['var_delay_max'] = 200
     DMRS180['mask_duration'] = 60
+    DMRS180['n_sample'] = 1
+    DMRS180['n_test'] = 1
     DMRS180['trial_length'] = sum(generic_timing.values())
     DMRS180['timing'] = generic_timing
 
@@ -334,6 +350,8 @@ def default_tasks():
     DMRS270['n_output'] = 3
     DMRS270['var_delay_max'] = 200
     DMRS270['mask_duration'] = 60
+    DMRS270['n_sample'] = 1
+    DMRS270['n_test'] = 1
     DMRS270['trial_length'] = sum(generic_timing.values())
     DMRS270['timing'] = generic_timing
 
@@ -346,6 +364,8 @@ def default_tasks():
     DMC['n_output'] = 3
     DMC['var_delay_max'] = 200
     DMC['mask_duration'] = 60
+    DMC['n_sample'] = 1
+    DMC['n_test'] = 1
     DMC['trial_length'] = sum(generic_timing.values())
     DMC['timing'] = generic_timing
 
@@ -358,6 +378,8 @@ def default_tasks():
     DelayGo['n_output'] = 8
     DelayGo['var_delay_max'] = 200
     DelayGo['mask_duration'] = 60
+    DelayGo['n_sample'] = 1
+    DelayGo['n_test'] = 1
     DelayGo['trial_length'] = sum(generic_timing.values())
     DelayGo['timing'] = generic_timing
 
@@ -370,7 +392,8 @@ def default_tasks():
     ABBA['n_output'] = 3
     ABBA['var_delay_max'] = 200
     ABBA['mask_duration'] = 60
-    ABBA['n_tests'] = 3
+    ABBA['n_sample'] = 1
+    ABBA['n_test'] = 3
     ABBA['match_test_prob'] = 0.5
     ABBA['repeat_pct'] = 0.5
     ABBA['trial_length'] = 0
@@ -390,7 +413,8 @@ def default_tasks():
     ABCA['n_output'] = 3
     ABCA['var_delay_max'] = 200
     ABCA['mask_duration'] = 60
-    ABCA['n_tests'] = 3
+    ABCA['n_sample'] = 1
+    ABCA['n_test'] = 3
     ABCA['match_test_prob'] = 0.5
     ABCA['repeat_pct'] = 0.0
     ABCA['trial_length'] = 0
@@ -404,8 +428,10 @@ def default_tasks():
     ProRetroWM = {}
     ProRetroWM['name'] = 'ProRetroWM'
     ProRetroWM['n_motion_dirs'] = 6
-    ProRetroWM['n_cues'] = 2
-    ProRetroWM['n_RFs'] = 2
+    ProRetroWM['n_sample'] = 2
+    ProRetroWM['n_cues'] = ProRetroWM['n_sample']
+    ProRetroWM['n_RFs'] = ProRetroWM['n_sample']
+    ProRetroWM['n_test'] = 1
     ProRetroWM['var_delay'] = False
     ProRetroWM['n_output'] = 8
     ProRetroWM['var_delay_max'] = 200
@@ -425,6 +451,8 @@ def default_tasks():
     MonkeyDMS['n_output'] = 3
     MonkeyDMS['var_delay_max'] = 200
     MonkeyDMS['mask_duration'] = 60
+    MonkeyDMS['n_sample'] = 1
+    MonkeyDMS['n_test'] = 1
     MonkeyDMS['trial_length'] = sum(monkey_timing.values())
     MonkeyDMS['timing'] = monkey_timing
 
