@@ -19,7 +19,7 @@ class ProRetroWM(Task.Task):
         Generate ProRetroWM trials (n_RFs stimuli)
         Modeled off of the task in the Buschman paper, but with the allowance
         for k different sample stimuli to be presented at once; whether
-        a trial is pro- or retro-spective is based on cue timing, which is 
+        a trial is pro- or retro-spective is based on cue timing, which is
         randomly determined trial-by-trial.
         """
 
@@ -45,15 +45,17 @@ class ProRetroWM(Task.Task):
             test_bounds     = [delay_bounds[-1], delay_bounds[-1] + self.test_time]
             response_bounds = test_bounds
 
-            # One element of timing that is variable: cue (based on whether the 
+            # One element of timing that is variable: cue (based on whether the
             # current trial is pro- or retro-spective)
             if prospective:
                 # Present cue as to which RF's stimulus must be remembered at the end of fixation
-                cue_bounds = [fix_bounds[-1] - self.cue_time, fix_bounds[-1]]
+                #cue_bounds = [fix_bounds[-1] - self.cue_time, fix_bounds[-1]]
+                cue_bounds = [fix_bounds[-1] - self.cue_time, self.trial_length]
             elif retrospective:
                 # Present cue as to which RF's stimulus must be indicated during the delay
                 mid_delay = delay_bounds[0] + self.delay_time // 2
-                cue_bounds = [mid_delay, mid_delay + self.cue_time]
+                #cue_bounds = [mid_delay, mid_delay + self.cue_time]
+                cue_bounds = [mid_delay, self.trial_length]
 
             # Set mask at critical periods
             trial_info['train_mask'][i, test_bounds[0]:test_bounds[0]+self.mask_duration] = 0
@@ -78,7 +80,7 @@ class ProRetroWM(Task.Task):
             # Generate outputs
             trial_info['desired_output'][i, range(0, test_bounds[0]), 0] = 1.
             if not catch:
-                trial_info['desired_output'][i, range(*test_bounds), -cued_dir] = 1. 
+                trial_info['desired_output'][i, range(*test_bounds), -cued_dir] = 1.
             else:
                 trial_info['desired_output'][i, range(*test_bounds), 0] = 1.
 
