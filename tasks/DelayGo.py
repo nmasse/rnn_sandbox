@@ -10,7 +10,7 @@ class DelayGo(Task.Task):
 
     def _get_trial_info(self, batch_size):
         return super()._get_trial_info(batch_size)
-        
+
     def generate_trials(self, batch_size, test_mode=False, delay_length=None):
 
         if self.var_delay:
@@ -61,12 +61,12 @@ class DelayGo(Task.Task):
             trial_info['neural_input'][i, range(*sample_bounds), :] += sample_input
             trial_info['neural_input'][i, range(0, test_bounds[0]), :] += fix_input
             trial_info['neural_input'][i, range(*rule_bounds), :]   += rule_input
-            trial_info['neural_input'][i, range(*cue_bounds), :]    += cue_input
+            #trial_info['neural_input'][i, range(*cue_bounds), :]    += cue_input
 
             # Generate outputs
             trial_info['desired_output'][i, range(0, test_bounds[0]), 0] = 1.
             if not catch:
-                trial_info['desired_output'][i, range(*test_bounds), -sample_dir] = 1. 
+                trial_info['desired_output'][i, range(*test_bounds), -sample_dir] = 1.
             else:
                 trial_info['desired_output'][i, range(*test_bounds), 0] = 1.
 
