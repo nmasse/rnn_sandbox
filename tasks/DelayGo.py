@@ -7,6 +7,7 @@ class DelayGo(Task.Task):
 
         # Initialize from superclass Task
         super().__init__(task_name, rule_id, var_delay, dt, tuning, timing, shape, misc)
+        self.categorization = misc['categorization']
 
     def _get_trial_info(self, batch_size):
         return super()._get_trial_info(batch_size)
@@ -63,10 +64,16 @@ class DelayGo(Task.Task):
             trial_info['neural_input'][i, range(*rule_bounds), :]   += rule_input
             #trial_info['neural_input'][i, range(*cue_bounds), :]    += cue_input
 
+            if self.categorization:
+                N = self.n_motion_dirs // 2
+                resp_idx = 1 + sample_dir // N
+            else:
+                resp_idx = 1 + sample_dir
+
             # Generate outputs
             trial_info['desired_output'][i, range(0, test_bounds[0]), 0] = 1.
             if not catch:
-                trial_info['desired_output'][i, range(*test_bounds), -sample_dir] = 1.
+                trial_info['desired_output'][i, range(*test_bounds), resp_idx] = 1.
             else:
                 trial_info['desired_output'][i, range(*test_bounds), 0] = 1.
 

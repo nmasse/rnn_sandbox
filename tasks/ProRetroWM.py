@@ -9,7 +9,7 @@ class ProRetroWM(Task.Task):
 
         # Initialize from superclass Task
         super().__init__(task_name, rule_id, var_delay, dt, tuning, timing, shape, misc)
-
+        self.categorization = misc['categorization']
 
     def _get_trial_info(self, batch_size):
         return super()._get_trial_info(batch_size)
@@ -76,6 +76,12 @@ class ProRetroWM(Task.Task):
             trial_info['neural_input'][i, range(0, test_bounds[0]), :] += fix_input
             trial_info['neural_input'][i, range(*rule_bounds), :]      += rule_input
             trial_info['neural_input'][i, range(*cue_bounds), :]       += cue_input
+
+            if self.categorization:
+                N = self.n_motion_dirs // 2
+                resp_idx = 1 + cued_dir // N
+            else:
+                resp_idx = 1 + cued_dir
 
             # Generate outputs
             trial_info['desired_output'][i, range(0, test_bounds[0]), 0] = 1.
