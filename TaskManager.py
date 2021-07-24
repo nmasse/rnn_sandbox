@@ -22,7 +22,7 @@ class TaskManager:
                  input_mean = 0,
                  input_noise = 0.0,
                  catch_trial_pct = 0.,
-                 test_cost_mult = 2.,
+                 test_cost_mult = 1.,
                  fix_break_penalty = -1.0,
                  correct_choice_reward = 1.0,
                  wrong_choice_penalty = -0.01,
@@ -255,17 +255,17 @@ class TaskManager:
         return tuning
 
 def monkey_DMS_task():
-    
+
 
     return [MonkeyDMS]
 
 def default_tasks():
 
     generic_timing = {'dead_time'   : 0,
-                     'fix_time'     : 400,
-                     'sample_time'  : 500,
+                     'fix_time'     : 200,
+                     'sample_time'  : 300,
                      'delay_time'   : 1000,
-                     'test_time'    : 500}
+                     'test_time'    : 300}
 
     pro_ret_timing = copy.copy(generic_timing)
     pro_ret_timing['cue_time'] = 200
@@ -289,6 +289,7 @@ def default_tasks():
     DMS['n_cues'] = 0
     DMS['n_RFs'] = 1
     DMS['var_delay'] = False
+    DMS['distractor'] = False
     DMS['n_output'] = 3
     DMS['var_delay_max'] = 200
     DMS['mask_duration'] = 60
@@ -297,6 +298,21 @@ def default_tasks():
     DMS['trial_length'] = sum(generic_timing.values())
     DMS['timing'] = generic_timing
 
+    DMS_distractor = {}
+    DMS_distractor['name'] = 'DMS'
+    DMS_distractor['n_motion_dirs'] = 6
+    DMS_distractor['n_cues'] = 0
+    DMS_distractor['n_RFs'] = 1
+    DMS_distractor['var_delay'] = False
+    DMS_distractor['distractor'] = True
+    DMS_distractor['n_output'] = 3
+    DMS_distractor['var_delay_max'] = 200
+    DMS_distractor['mask_duration'] = 60
+    DMS_distractor['n_sample'] = 1
+    DMS_distractor['n_test'] = 1
+    DMS_distractor['trial_length'] = sum(generic_timing.values())
+    DMS_distractor['timing'] = generic_timing
+
     DMRS45 = {}
     DMRS45['name'] = 'DMRS'
     DMRS45['rotation'] = 45
@@ -304,6 +320,7 @@ def default_tasks():
     DMRS45['n_cues'] = 0
     DMRS45['n_RFs'] = 1
     DMRS45['var_delay'] = False
+    DMRS45['distractor'] = False
     DMRS45['n_output'] = 3
     DMRS45['var_delay_max'] = 200
     DMRS45['mask_duration'] = 60
@@ -319,6 +336,7 @@ def default_tasks():
     DMRS90['n_cues'] = 0
     DMRS90['n_RFs'] = 1
     DMRS90['var_delay'] = False
+    DMRS90['distractor'] = False
     DMRS90['n_output'] = 3
     DMRS90['var_delay_max'] = 200
     DMRS90['mask_duration'] = 60
@@ -334,6 +352,7 @@ def default_tasks():
     DMRS180['n_cues'] = 0
     DMRS180['n_RFs'] = 1
     DMRS180['var_delay'] = False
+    DMRS180['distractor'] = False
     DMRS180['n_output'] = 3
     DMRS180['var_delay_max'] = 200
     DMRS180['mask_duration'] = 60
@@ -349,6 +368,7 @@ def default_tasks():
     DMRS270['n_cues'] = 0
     DMRS270['n_RFs'] = 1
     DMRS270['var_delay'] = False
+    DMRS270['distractor'] = False
     DMRS270['n_output'] = 3
     DMRS270['var_delay_max'] = 200
     DMRS270['mask_duration'] = 60
@@ -377,7 +397,7 @@ def default_tasks():
     DelayGo['n_cues'] = 1
     DelayGo['n_RFs'] = 1
     DelayGo['var_delay'] = False
-    DelayGo['n_output'] = 8
+    DelayGo['n_output'] = 6
     DelayGo['var_delay_max'] = 200
     DelayGo['mask_duration'] = 60
     DelayGo['n_sample'] = 1
@@ -435,7 +455,7 @@ def default_tasks():
     ProRetroWM['n_RFs'] = ProRetroWM['n_sample']
     ProRetroWM['n_test'] = 1
     ProRetroWM['var_delay'] = False
-    ProRetroWM['n_output'] = 8
+    ProRetroWM['n_output'] = 6
     ProRetroWM['var_delay_max'] = 200
     ProRetroWM['mask_duration'] = 60
     ProRetroWM['trial_length'] = 0
@@ -458,8 +478,9 @@ def default_tasks():
     MonkeyDMS['trial_length'] = sum(monkey_timing.values())
     MonkeyDMS['timing'] = monkey_timing
 
-    task_list = [DMS, DMRS45, DMRS90, DMRS180, DMRS270, DMC, \
+    task_list = [DMS, DMS_distractor, DMRS45, DMRS90, DMRS180, DMRS270, DMC, \
         DelayGo, ABBA, ABCA, ProRetroWM, MonkeyDMS]
+
 
     return task_list
 

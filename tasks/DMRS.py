@@ -11,12 +11,13 @@ class DMRS(Task.Task):
         super().__init__(task_name, rule_id, var_delay, dt, tuning, timing, shape, misc)
 
         # Identify trial type and match rotation wrt sample; bind basic identifying info, too
-        self.rotation  = misc['rotation']
-        self.task_name = 'DMRS' if (self.rotation != 0) else 'DMS'
+        self.rotation   = misc['rotation']
+        self.distractor = misc['distractor']
+        self.task_name  = 'DMRS' if (self.rotation != 0) else 'DMS'
 
     def _get_trial_info(self, batch_size):
         return super()._get_trial_info(batch_size)
-        
+
     def generate_trials(self, batch_size, test_mode=False, delay_length=None):
 
         if self.var_delay:
@@ -29,24 +30,33 @@ class DMRS(Task.Task):
             # Determine trial parameters (sample stimulus, match, etc.)
             sample_dir = np.random.randint(self.n_motion_dirs)
             match      = np.random.randint(2)
+            dist_match = np.random.randint(2) # should the distractor match the stimulus
             catch      = np.random.rand() < self.catch_trial_pct
             match_rotation = int(self.n_motion_dirs * self.rotation/360)
 
             # Set RFs
             sample_RF = np.random.choice(self.n_RFs)
             test_RF   = np.random.choice(self.n_RFs)
+            dist_RF   = sample_RF # distractor RF
 
-            # Determine test direction based on whether it's a match trial or not
+            # Determine test/distractor direction based on whether it's a match trial or not
+            matching_dir = (sample_dir + match_rotation) % self.n_motion_dirs
             if not test_mode:
-                matching_dir = (sample_dir + match_rotation) % self.n_motion_dirs
-                if match == 1: 
+                # Test direction
+                if match == 1:
                     test_dir = matching_dir
                 else:
                     possible_dirs = np.setdiff1d(np.arange(self.n_motion_dirs, dtype=np.int32), matching_dir)
                     test_dir      = np.random.choice(possible_dirs)
+                # Distractor direction
+                if dist_match == 1:
+                    dist_dir = matching_dir
+                else:
+                    possible_dirs = np.setdiff1d(np.arange(self.n_motion_dirs, dtype=np.int32), matching_dir)
+                    dist_dir      = np.random.choice(possible_dirs)
+
             else:
                 test_dir     = np.random.randint(self.n_motion_dirs)
-                matching_dir = (sample_dir + match_rotation) % self.n_motion_dirs
                 match        = 1 if test_dir == matching_dir else 0
 
             # Determine trial timing
@@ -57,14 +67,16 @@ class DMRS(Task.Task):
                     total_delay = delay_length
                 else:
                     total_delay += np.random.choice(np.arange(-self.var_delay_max, self.var_delay_max))
-
                 total_test -= (total_delay - self.delay_time)
+            dist_start = total_delay//2 - self.sample_time//2
+            dist_end   = total_delay//2 + self.sample_time//2
 
             fix_bounds      = [0, (self.dead_time + self.fix_time)]
             rule_bounds     = [0, self.trial_length]
             sample_bounds   = [fix_bounds[-1], fix_bounds[-1] + self.sample_time]
             delay_bounds    = [sample_bounds[-1], sample_bounds[-1] + total_delay]
             test_bounds     = [delay_bounds[-1], delay_bounds[-1] + total_test]
+            dist_bounds     = [sample_bounds[-1] + dist_start, sample_bounds[-1] + dist_end]
             response_bounds = test_bounds
 
             # Set mask at critical periods
@@ -75,6 +87,7 @@ class DMRS(Task.Task):
 
             # Generate inputs
             sample_input = np.reshape(self.motion_tuning[:, sample_RF, sample_dir],(1,-1))
+            dist_input = np.reshape(self.motion_tuning[:, dist_RF, dist_dir],(1,-1))
             test_input   = int(catch == 0) * np.reshape(self.motion_tuning[:, test_RF, test_dir],(1,-1))
             fix_input    = int(self.n_fix_tuned > 0) * np.reshape(self.fix_tuning[:,0],(-1,1)).T
             rule_input   = int(self.n_rule_tuned > 0) * np.reshape(self.rule_tuning[:,self.rule_id],(1,-1))
@@ -82,6 +95,9 @@ class DMRS(Task.Task):
             trial_info['neural_input'][i, range(*test_bounds), :]   += test_input
             trial_info['neural_input'][i, range(0, test_bounds[0]), :] += fix_input
             trial_info['neural_input'][i, range(*rule_bounds), :]   += rule_input
+
+            if self.distractor:
+                trial_info['neural_input'][i, range(*dist_bounds), :]  += dist_input
 
             # Generate outputs
             trial_info['desired_output'][i, range(0, test_bounds[0]), 0] = 1.
