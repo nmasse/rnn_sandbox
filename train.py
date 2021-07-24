@@ -39,7 +39,7 @@ class Agent:
 
         self.training_batches = [stim.generate_batch(args.batch_size, to_exclude=[self.n_tasks - 1]) for _ in range(args.n_stim_batches)]
         self.dms_batch = stim.generate_batch(args.batch_size, rule=0)
-        self.monkey_dms_batch = stim.generate_batch(args.batch_size, rule=self.n_tasks - 1)
+        self.monkey_dms_batch = stim.generate_batch(args.batch_size, rule=self.n_tasks - 1, include_test=True)
 
 
         print('Trainable variables...')
