@@ -20,6 +20,7 @@ dependencies:
   - numpy=1.18.5
   - cudatoolkit=11.0
   - cudnn=8.0
+  - uuid
   - pip:
     - tensorflow-gpu==2.5.0
     - tensorflow-probability==0.12.2

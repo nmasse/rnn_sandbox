@@ -1,5 +1,6 @@
 import numpy as np
 import tensorflow as tf
+import matplotlib.pyplot as plt
 
 class CognitiveTasks:
 
@@ -7,13 +8,15 @@ class CognitiveTasks:
 
         self._args    = args
 
-        self._args.possible_tasks = 1
+        self._args.possible_tasks = list(range(7))
+        #self._args.possible_tasks = [3]
         self._args.n_output = 3
         self._args.batch_size = batch_size
 
         self.dt = self._args.dt
         self.n_input = self._args.n_input
         self.n_fix_tuned = self._args.n_fix
+        self.n_rule_tuned = self._args.n_rule
 
         self.fix_break_penalty = -1.
         self.correct_choice_reward = 1.
@@ -23,8 +26,7 @@ class CognitiveTasks:
         self.n_receptive_fields = 1
         self.tuning_height = 2
         self.kappa = 2
-        self.n_rules = 16
-        self.n_rule_tuned = self.n_rules
+        self.n_rules = len(self._args.possible_tasks)
 
         self.n_motion_tuned = self._args.n_input - self.n_rule_tuned  - self.n_fix_tuned
 
@@ -34,7 +36,7 @@ class CognitiveTasks:
         self.delay_time = 1000
         self.test_time = 500
         self.variable_delay_max = 800 // self._args.dt
-        self.mask_duration = 40 // self._args.dt
+        self.mask_duration = 60 // self._args.dt
         self.catch_trial_pct = 0.
         self.test_cost_multiplier = 1.
         self.rule_cue_multiplier = 1.
@@ -70,12 +72,28 @@ class CognitiveTasks:
         self.dataset = self.dataset.prefetch(tf.data.experimental.AUTOTUNE)
 
 
+    def generate_trial_wraper_repeats(self, possible_tasks, n_reps=5):
+
+
+        while True:
+            task_id = np.random.choice(possible_tasks)
+            desired_output = np.zeros((self.n_time_steps,  self._args.n_output), dtype=np.float32)
+            train_mask = np.ones((self.n_time_steps), dtype=np.float32)
+            neural_input = np.random.normal(self.input_mean, self.noise_in, size=(self.n_time_steps, self._args.n_input))
+            train_mask[self.dead_time_rng] = 0
+            sample_dir = np.random.randint(self.n_motion_dirs)
+
+            if task_id < 7:
+                yield self.generate_wm_trial(task_id, desired_output, train_mask, neural_input, sample_dir)
+            else:
+                yield self.generate_simple_trial(task_id, desired_output, train_mask, neural_input, sample_dir)
+
+
     def generate_trial_wraper(self, possible_tasks):
 
 
         while True:
             task_id = np.random.choice(possible_tasks)
-            task_id = 3
             desired_output = np.zeros((self.n_time_steps,  self._args.n_output), dtype=np.float32)
             train_mask = np.ones((self.n_time_steps), dtype=np.float32)
             neural_input = np.random.normal(self.input_mean, self.noise_in, size=(self.n_time_steps, self._args.n_input))
@@ -310,6 +328,7 @@ class CognitiveTasks:
 
         # generate list of possible stimulus directions
         stim_dirs = np.float32(np.arange(0,360,360/self.n_motion_dirs))
+
 
         for n in range(self.n_motion_tuned//self.n_receptive_fields):
             for i in range(self.n_motion_dirs):

@@ -73,8 +73,8 @@ class ABBA(Task.Task):
             sample_bounds   = [fix_bounds[-1], fix_bounds[-1] + self.sample_time]
 
             # Timings with multiple elements: delay and test
-            delay_bounds    = [sample_bounds[-1], sample_bounds[-1] + self.delay_time]
-            test_bounds     = [delay_bounds[-1], delay_bounds[-1] + self.test_time]
+            delay_bounds    = [[sample_bounds[-1], sample_bounds[-1] + self.delay_time]]
+            test_bounds     = [[delay_bounds[-1][1], delay_bounds[-1][1] + self.test_time]]
             for _ in range(1, self.n_tests):
                 delay_bounds.append([test_bounds[-1][1], test_bounds[-1][1] + self.delay_time])
                 test_bounds.append([delay_bounds[-1][1], delay_bounds[-1][1] + self.test_time])
@@ -82,9 +82,9 @@ class ABBA(Task.Task):
 
             # Set mask at critical periods
             for tb in test_bounds:
-                trial_info['train_mask'][tb[0]:tb[0] + mask_duration, i] = 0
-                trial_info['train_mask'][range(*tb), i] *= self.test_cost_multiplier
-            trial_info['train_mask'][range(0, self.dead_time), :] = 0
+                trial_info['train_mask'][i, tb[0]:tb[0] + self.mask_duration] = 0
+                trial_info['train_mask'][i, range(*tb)] *= self.test_cost_multiplier
+            trial_info['train_mask'][:, range(0, self.dead_time)] = 0
             
 
             # Generate inputs
@@ -93,42 +93,42 @@ class ABBA(Task.Task):
             for k in range(len(stim_dirs) - 1):
                 test_inp = np.reshape(self.motion_tuning[:, test_RFs[k], 
                     stim_dirs[k + 1]],(1,-1))
-                test_inputs.append(int(catch != 0) * test_inp)
-            fix_input    = int(self.num_fix_tuned > 0) * np.reshape(self.fix_tuning[:,0],(-1,1)).T
-            rule_input   = int(self.num_rule_tuned > 0) * np.reshape(self.rule_tuning[:,self.rule_id],(1,-1))
-            trial_info['neural_input'][range(*sample_bounds), i, :] += sample_input
-            trial_info['neural_input'][range(*rule_bounds), i, :]   += rule_input
-            trial_info['neural_input'][range(0, delay_bounds[0][0]), i] += fix_input
+                test_inputs.append(int(catch == 0) * test_inp)
+            fix_input    = int(self.n_fix_tuned > 0) * np.reshape(self.fix_tuning[:,0],(-1,1)).T
+            rule_input   = int(self.n_rule_tuned > 0) * np.reshape(self.rule_tuning[:,self.rule_id],(1,-1))
+            trial_info['neural_input'][i, range(*sample_bounds), :] += sample_input
+            trial_info['neural_input'][i, range(*rule_bounds), :]   += rule_input
+            trial_info['neural_input'][i, range(0, delay_bounds[0][0]), :] += fix_input
             for db, tb, ti in zip(delay_bounds, test_bounds, test_inputs):
-                trial_info['neural_input'][range(*db), i] += fix_input
-                trial_info['neural_input'][range(*tb), i, :] += ti
+                trial_info['neural_input'][i, range(*db)] += fix_input
+                trial_info['neural_input'][i, range(*tb), :] += ti
 
             # Generate outputs
-            trial_info['desired_output'][range(0, test_bounds[0][0]), i, 0] = 1.
+            trial_info['desired_output'][i, range(0, test_bounds[0][0]), 0] = 1.
             if not catch:
                 for db, tb, test_dir in zip(delay_bounds, test_bounds, stim_dirs[1:]):
-                    trial_info['desired_output'][range(*db), i, 0] = 1.
+                    trial_info['desired_output'][i, range(*db), 0] = 1.
                     if test_dir != sample_dir:
-                        trial_info['desired_output'][range(*tb), i, 1] = 1. ## NON-MATCH unit
+                        trial_info['desired_output'][i, range(*tb), 1] = 1. ## NON-MATCH unit
                     else:
-                        trial_info['desired_output'][range(*tb), i, 2] = 1. ## MATCH unit
+                        trial_info['desired_output'][i, range(*tb), 2] = 1. ## MATCH unit
             else:
                 for db, tb in zip(delay_bounds, test_bounds):
-                    trial_info['desired_output'][range(*db), i, 0] = 1.
-                    trial_info['desired_output'][range(*tb), i, 0] = 1.
+                    trial_info['desired_output'][i, range(*db), 0] = 1.
+                    trial_info['desired_output'][i, range(*tb), 0] = 1.
 
             # Generate reward matrix, shape (T, output_size)
             reward_matrix = np.zeros((self.trial_length, self.n_output), dtype=np.float32)
             if not catch:
-                reward_matrix[range(0, test_bounds[0][0]), i, 1:] = self.fix_break_penalty
+                reward_matrix[range(0, test_bounds[0][0]), 1:] = self.fix_break_penalty
                 for db, tb, test_dir in zip(delay_bounds, test_bounds, stim_dirs[1:]):
-                    reward_matrix[range(*db), i, 1:] = self.fix_break_penalty
+                    reward_matrix[range(*db), 1:] = self.fix_break_penalty
                     if test_dir != sample_dir:
-                        reward_matrix[range(*tb), i, 1] = self.correct_choice_reward ## NON-MATCH unit
-                        reward_matrix[range(*tb), i, 2:] = self.wrong_choice_penalty
+                        reward_matrix[range(*tb), 1] = self.correct_choice_reward ## NON-MATCH unit
+                        reward_matrix[range(*tb), 2:] = self.wrong_choice_penalty
                     else:
-                        reward_matrix[range(*tb), i, 1:] = self.wrong_choice_penalty ## MATCH unit
-                        reward_matrix[range(*tb), i, 2] = self.correct_choice_reward
+                        reward_matrix[range(*tb), 1:] = self.wrong_choice_penalty ## MATCH unit
+                        reward_matrix[range(*tb), 2] = self.correct_choice_reward
                 reward_matrix[-1, 0] = self.fix_break_penalty
             else:
                 reward_matrix[-1, 0] = self.correct_choice_reward
@@ -136,8 +136,8 @@ class ABBA(Task.Task):
 
             # Record trial information
             trial_info['sample'][i] = sample_dir
-            trial_info['test'][i]   = np.int8(stim_dirs)
-            trial_info['rule'][i]   = rule_id
+            trial_info['test'][i]   = np.int8(stim_dirs[1:])
+            trial_info['rule'][i]   = self.rule_id
             trial_info['catch'][i]  = catch
             timing_dict = {'fix_bounds'     : fix_bounds,
                            'sample_bounds'  : sample_bounds,

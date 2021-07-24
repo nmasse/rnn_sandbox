@@ -45,7 +45,7 @@ class ProRetroWM(Task.Task):
             test_cue    = np.random.choice(self.n_RFs)
             cued_dir    = sample_dirs[test_cue]
             catch       = np.random.rand() < self.catch_trial_pct
-            prospective = bool(np.random.rand() < 0.5)
+            prospective = np.random.rand() < 0.5
             retrospective = not prospective
 
             # Establish task timings
@@ -76,6 +76,8 @@ class ProRetroWM(Task.Task):
             sample_inputs = []
             for k, s_k in enumerate(sample_dirs):
                 sample_inputs.append(np.reshape(self.motion_tuning[:, k, s_k],(1,-1)))
+            sample_input = np.sum(np.stack(sample_inputs), axis=0)
+
             fix_input  = int(self.n_fix_tuned > 0) * np.reshape(self.fix_tuning[:,0],(1,-1))
             rule_input = int(self.n_rule_tuned > 0) * np.reshape(self.rule_tuning[:,self.rule_id],(1,-1))
             cue_input  = int(self.n_cue_tuned > 0) * np.reshape(self.cue_tuning[:,0],(1,-1))
@@ -103,10 +105,10 @@ class ProRetroWM(Task.Task):
             trial_info['reward_matrix'][i,...] = reward_matrix
 
             # Record trial information
-            trial_info['sample'][i] = sample_dir
-            trial_info['catch'][i] = catch
-            trial_info['rule'][i] = self.rule_id
-            trial_info['cue'][i] = test_cue
+            trial_info['sample'][i] = sample_dirs
+            trial_info['catch'][i]  = catch
+            trial_info['rule'][i]   = self.rule_id
+            trial_info['cue'][i]    = test_cue
             timing_dict = {'fix_bounds'     : fix_bounds,
                            'sample_bounds'  : sample_bounds,
                            'delay_bounds'   : delay_bounds,

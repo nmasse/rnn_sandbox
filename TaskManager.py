@@ -1,35 +1,38 @@
-import numpy as np 
+import numpy as np
 import copy
-import tasks.DMRS
-import tasks.DMC
+import tasks.ABBA
 import tasks.DelayGo
+import tasks.DMC
+import tasks.DMRS
+import tasks.MonkeyDMS
+import tasks.ProRetroWM
 import tensorflow as tf
 import matplotlib.pyplot as plt
 
 class TaskManager:
 
-    def __init__(self, 
-                 task_list, 
+    def __init__(self,
+                 task_list,
                  batch_size,
-                 n_motion_tuned = 32, 
-                 n_fix_tuned = 1, 
-                 tuning_height = 2, 
-                 kappa = 2, 
+                 n_motion_tuned = 32,
+                 n_fix_tuned = 1,
+                 tuning_height = 2,
+                 kappa = 2,
                  dt = 20,
                  input_mean = 0,
-                 input_noise = 0.1,
-                 catch_trial_pct = 0., 
-                 test_cost_mult = 1.,
+                 input_noise = 0.0,
+                 catch_trial_pct = 0.,
+                 test_cost_mult = 2.,
                  fix_break_penalty = -1.0,
                  correct_choice_reward = 1.0,
                  wrong_choice_penalty = -0.01,
                  tf2 = False):
         ## Args:
-        # task_list: list of dicts of task IDs w/ task parameters 
+        # task_list: list of dicts of task IDs w/ task parameters
         #   - n directions
         #   - n cues
         #   - n RFs
-        #   - var_delay 
+        #   - var_delay
         #   - timing dictionary
         self.n_motion_tuned  = n_motion_tuned
         self.n_fix_tuned     = n_fix_tuned
@@ -48,18 +51,21 @@ class TaskManager:
         self.correct_choice_reward = correct_choice_reward
         self.wrong_choice_penalty  = wrong_choice_penalty
 
-        # Filter for DMS among task_list specified
+        # Filter for DMS, ABCA among task_list specified
         for t in task_list:
             if t['name'] == 'DMS':
                 t['name'] = 'DMRS'
                 t['rotation'] = 0
 
+            if t['name'] == 'ABCA':
+                t['name'] = 'ABBA'
+
         # Use number of task_list to determine number of rule-tuned inputs,
         # cue-tuned inputs
         self.n_rule_tuned = len(task_list)
         self.n_cue_tuned  = max([t['n_cues'] for t in task_list])
-        
-        # Determine number of RFs required, num motion directions; duplicate 
+
+        # Determine number of RFs required, num motion directions; duplicate
         # motion tuning for each receptive field
         self.n_RFs = max([t['n_RFs'] for t in task_list])
         self.n_motion_dirs = max([t['n_motion_dirs'] for t in task_list])
@@ -70,7 +76,7 @@ class TaskManager:
                        self.n_cue_tuned    + \
                        self.n_fix_tuned
         self.n_output     = np.sum(np.unique([t['n_output'] for t in task_list]))
-        self.trial_length = max([sum(t['timing'].values()) // self.dt for t in task_list])
+        self.trial_length = max([t['trial_length'] // self.dt for t in task_list])
 
         # Build tuning, shape
         self.tuning = self.create_tuning_functions()
@@ -97,7 +103,7 @@ class TaskManager:
         # Append dataset object for tf2 interface
         if self.tf2:
             self.dataset = tf.data.Dataset.from_generator(self.generate_batch_tf2,
-                output_types = (tf.float32, tf.float32, tf.float32, tf.float32, 
+                output_types = (tf.float32, tf.float32, tf.float32, tf.float32,
                     tf.int8, tf.int8),
                 output_shapes = (
                     (self.trial_length, self.n_input), # neural_input
@@ -113,10 +119,9 @@ class TaskManager:
     def visualize_task(self, rule_id):
         # Visualize neural inputs and desired outputs of specified task
         trial_info = self.generate_batch(1, rule=rule_id)
-        fig, ax = plt.subplots(nrows=3, ncols=1, figsize=(5, 10))
-        ax[0].imshow(trial_info['neural_input'].squeeze().T, aspect='auto')
-        ax[1].imshow(trial_info['desired_output'].squeeze().T, aspect='auto')
-        ax[2].imshow(trial_info['train_mask'].T, aspect='auto')
+        fig, ax = plt.subplots(nrows=2, ncols=1, figsize=(5, 10))
+        ax[0].imshow(trial_info['neural_input'].squeeze().T, aspect='equal')
+        ax[1].imshow(trial_info['desired_output'].squeeze().T, aspect='equal')
         plt.show()
 
 
@@ -124,37 +129,38 @@ class TaskManager:
         while True:
             yield self.generate_batch(1)
 
-
-    def generate_batch(self, batch_size, rule=None, **kwargs):
-        # Generate a batch of trials; if rule is specified, 
+    def generate_batch(self, batch_size, to_exclude=[], rule=None, include_test=False, **kwargs):
+        # Generate a batch of trials; if rule is specified,
         # only generate trials of that rule, otherwise
-        # generate at random from all task_list interleaved 
+        # generate at random from all task_list interleaved
         # w/in same batch
         if rule is not None:
             trial_info = self.task_list[rule].generate_trials(batch_size, **kwargs)
         else:
             # Get empty trial info dictionary, then write its elements,
             # one at a time
-            trial_info = self.generate_empty_trial_info(batch_size)
+            trial_info = self.generate_empty_trial_info(batch_size, include_test)
             for i in range(batch_size):
-                rule = np.random.choice(self.n_rule_tuned)
-                trial_info = self.write_trial(trial_info, 
-                    self.task_list[rule].generate_trials(1, **kwargs), i, batch_size)
+                rule = np.random.choice(np.setdiff1d(np.arange(self.n_rule_tuned), to_exclude))
+                trial_info = self.write_trial(trial_info,
+                    self.task_list[rule].generate_trials(1, **kwargs),
+                    i,
+                    batch_size)
 
         # Extract just the elements that are necessary for the tf dataset
-        if self.tf2:
-            keys = ['neural_input', 'desired_output', 'train_mask', 
-                'reward_matrix', 'sample', 'rule']
-            return tuple([trial_info[k].squeeze() for k in keys])
-            
-        return trial_info
+        keys = ['neural_input', 'desired_output', 'train_mask',
+            'reward_matrix', 'sample', 'rule']
+        if include_test:
+            keys.append('test')
+        return tuple([trial_info[k].squeeze() for k in keys])
 
-    def generate_empty_trial_info(self, batch_size):
+
+    def generate_empty_trial_info(self, batch_size, include_test=False):
         # Generate an empty trial info dictionary to add other trials to, one-by-one
         trial_info = {'desired_output'  :  np.zeros((batch_size, self.trial_length, self.n_output), dtype=np.float32),
                       'train_mask'      :  np.ones((batch_size, self.trial_length), dtype=np.float32),
                       'rule'            :  np.zeros((batch_size), dtype=np.int8),
-                      'neural_input'    :  np.random.normal(self.input_mean, self.input_noise, 
+                      'neural_input'    :  np.random.normal(self.input_mean, self.input_noise,
                                                 size=(batch_size, self.trial_length, self.n_input)),
                       'sample'          :  np.zeros((batch_size), dtype=np.int8),
                       'reward_matrix'   :  np.zeros((batch_size, self.trial_length, self.n_output), dtype=np.float32),
@@ -197,9 +203,9 @@ class TaskManager:
         motion_tuning = np.zeros((self.n_input, self.n_RFs, self.n_motion_dirs))
         fix_tuning    = np.zeros((self.n_input, 1))
         rule_tuning   = np.zeros((self.n_input, self.n_rule_tuned))
-        cue_tuning    = np.zeros((self.n_input, self.n_cue_tuned)) 
+        cue_tuning    = np.zeros((self.n_input, self.n_cue_tuned))
 
-        # Generate list of prefered directions, dividing neurons by n_RFs 
+        # Generate list of prefered directions, dividing neurons by n_RFs
         pref_dirs = np.float32(np.arange(0, 360, 360 / (self.n_motion_tuned //
             self.n_RFs)))
 
@@ -233,161 +239,197 @@ class TaskManager:
 
         # Package together into a dictionary and return
         tuning = {'motion': motion_tuning,
-                  'fix'   : fix_tuning, 
+                  'fix'   : fix_tuning,
                   'rule'  : rule_tuning,
                   'cue'   : cue_tuning}
         return tuning
 
+def monkey_DMS_task():
+    
+
+    return [MonkeyDMS]
+
 def default_tasks():
 
-    generic_timing = {'dead_time'   : 100,
-                     'fix_time'     : 500,
+    generic_timing = {'dead_time'   : 0,
+                     'fix_time'     : 400,
                      'sample_time'  : 500,
                      'delay_time'   : 1000,
                      'test_time'    : 500}
-    pro_ret_timing = copy.copy(generic_timing)
-    pro_ret_timing['cue_time'] = 300
 
-    nick_timing = {'dead_time'    : 0,
-                   'fix_time'     : 500,
-                   'sample_time'  : 667,
-                   'delay_time'   : 1013,
-                   'test_time'    : 667}
+    pro_ret_timing = copy.copy(generic_timing)
+    pro_ret_timing['cue_time'] = 200
+
+    abba_timing   = {'dead_time'    : 0,
+                     'fix_time'     : 200,
+                     'sample_time'  : 300,
+                     'delay_time'   : 300,
+                     'test_time'    : 300}
+
+    monkey_timing = {'dead_time'    : 0,
+                     'fix_time'     : 500,
+                     'sample_time'  : 660,
+                     'delay_time'   : 1020,
+                     'test_time'    : 660}
 
     # Example of usage: DMS, DMRS, DMC, DelayGo (all same extra params)
     DMS = {}
     DMS['name'] = 'DMS'
-    DMS['n_motion_dirs'] = 8
+    DMS['n_motion_dirs'] = 6
     DMS['n_cues'] = 0
     DMS['n_RFs'] = 1
     DMS['var_delay'] = False
     DMS['n_output'] = 3
     DMS['var_delay_max'] = 200
-    DMS['mask_duration'] = 50
+    DMS['mask_duration'] = 60
+    DMS['trial_length'] = sum(generic_timing.values())
     DMS['timing'] = generic_timing
 
     DMRS45 = {}
     DMRS45['name'] = 'DMRS'
     DMRS45['rotation'] = 45
-    DMRS45['n_motion_dirs'] = 8
+    DMRS45['n_motion_dirs'] = 6
     DMRS45['n_cues'] = 0
     DMRS45['n_RFs'] = 1
     DMRS45['var_delay'] = False
     DMRS45['n_output'] = 3
     DMRS45['var_delay_max'] = 200
-    DMRS45['mask_duration'] = 50
+    DMRS45['mask_duration'] = 60
+    DMRS45['trial_length'] = sum(generic_timing.values())
     DMRS45['timing'] = generic_timing
 
     DMRS90 = {}
     DMRS90['name'] = 'DMRS'
     DMRS90['rotation'] = 90
-    DMRS90['n_motion_dirs'] = 8
+    DMRS90['n_motion_dirs'] = 6
     DMRS90['n_cues'] = 0
     DMRS90['n_RFs'] = 1
     DMRS90['var_delay'] = False
     DMRS90['n_output'] = 3
     DMRS90['var_delay_max'] = 200
-    DMRS90['mask_duration'] = 50
+    DMRS90['mask_duration'] = 60
+    DMRS90['trial_length'] = sum(generic_timing.values())
     DMRS90['timing'] = generic_timing
 
     DMRS180 = {}
     DMRS180['name'] = 'DMRS'
     DMRS180['rotation'] = 180
-    DMRS180['n_motion_dirs'] = 8
+    DMRS180['n_motion_dirs'] = 6
     DMRS180['n_cues'] = 0
     DMRS180['n_RFs'] = 1
     DMRS180['var_delay'] = False
     DMRS180['n_output'] = 3
     DMRS180['var_delay_max'] = 200
-    DMRS180['mask_duration'] = 50
+    DMRS180['mask_duration'] = 60
+    DMRS180['trial_length'] = sum(generic_timing.values())
     DMRS180['timing'] = generic_timing
 
     DMRS270 = {}
     DMRS270['name'] = 'DMRS'
     DMRS270['rotation'] = 270
-    DMRS270['n_motion_dirs'] = 8
+    DMRS270['n_motion_dirs'] = 6
     DMRS270['n_cues'] = 0
     DMRS270['n_RFs'] = 1
     DMRS270['var_delay'] = False
     DMRS270['n_output'] = 3
     DMRS270['var_delay_max'] = 200
-    DMRS270['mask_duration'] = 50
+    DMRS270['mask_duration'] = 60
+    DMRS270['trial_length'] = sum(generic_timing.values())
     DMRS270['timing'] = generic_timing
 
     DMC = {}
     DMC['name'] = 'DMC'
-    DMC['n_motion_dirs'] = 8
+    DMC['n_motion_dirs'] = 6
     DMC['n_cues'] = 0
     DMC['n_RFs'] = 1
     DMC['var_delay'] = False
     DMC['n_output'] = 3
     DMC['var_delay_max'] = 200
-    DMC['mask_duration'] = 50
+    DMC['mask_duration'] = 60
+    DMC['trial_length'] = sum(generic_timing.values())
     DMC['timing'] = generic_timing
 
     DelayGo = {}
     DelayGo['name'] = 'DelayGo'
-    DelayGo['n_motion_dirs'] = 8
+    DelayGo['n_motion_dirs'] = 6
     DelayGo['n_cues'] = 1
     DelayGo['n_RFs'] = 1
     DelayGo['var_delay'] = False
     DelayGo['n_output'] = 8
     DelayGo['var_delay_max'] = 200
-    DelayGo['mask_duration'] = 50
+    DelayGo['mask_duration'] = 60
+    DelayGo['trial_length'] = sum(generic_timing.values())
     DelayGo['timing'] = generic_timing
 
     ABBA = {}
     ABBA['name'] = 'ABBA'
-    ABBA['n_motion_dirs'] = 8
+    ABBA['n_motion_dirs'] = 6
     ABBA['n_cues'] = 1
     ABBA['n_RFs'] = 1
     ABBA['var_delay'] = False
     ABBA['n_output'] = 3
     ABBA['var_delay_max'] = 200
-    ABBA['mask_duration'] = 50
+    ABBA['mask_duration'] = 60
     ABBA['n_tests'] = 3
     ABBA['match_test_prob'] = 0.5
     ABBA['repeat_pct'] = 0.5
-    ABBA['timing'] = generic_timing
+    ABBA['trial_length'] = 0
+    for k, v in abba_timing.items():
+        if 'delay' in k or 'test' in k:
+            ABBA['trial_length'] += (ABBA['n_tests'] * v)
+        else:
+            ABBA['trial_length'] += v
+    ABBA['timing'] = abba_timing
 
     ABCA = {}
     ABCA['name'] = 'ABCA'
-    ABCA['n_motion_dirs'] = 8
+    ABCA['n_motion_dirs'] = 6
     ABCA['n_cues'] = 1
     ABCA['n_RFs'] = 1
     ABCA['var_delay'] = False
     ABCA['n_output'] = 3
     ABCA['var_delay_max'] = 200
-    ABCA['mask_duration'] = 50
+    ABCA['mask_duration'] = 60
     ABCA['n_tests'] = 3
     ABCA['match_test_prob'] = 0.5
     ABCA['repeat_pct'] = 0.0
-    ABCA['timing'] = generic_timing
+    ABCA['trial_length'] = 0
+    for k, v in abba_timing.items():
+        if 'delay' in k or 'test' in k:
+            ABCA['trial_length'] += (ABBA['n_tests'] * v)
+        else:
+            ABCA['trial_length'] += v
+    ABCA['timing'] = abba_timing
 
     ProRetroWM = {}
     ProRetroWM['name'] = 'ProRetroWM'
-    ProRetroWM['n_motion_dirs'] = 8
+    ProRetroWM['n_motion_dirs'] = 6
     ProRetroWM['n_cues'] = 2
     ProRetroWM['n_RFs'] = 2
     ProRetroWM['var_delay'] = False
     ProRetroWM['n_output'] = 8
     ProRetroWM['var_delay_max'] = 200
-    ProRetroWM['mask_duration'] = 50
+    ProRetroWM['mask_duration'] = 60
+    ProRetroWM['trial_length'] = 0
+    for k, v in pro_ret_timing.items():
+        if 'cue' not in k:
+            ProRetroWM['trial_length'] += v
     ProRetroWM['timing'] = pro_ret_timing
 
-    NickDMS = {}
-    NickDMS['name'] = 'NickDMS'
-    NickDMS['n_motion_dirs'] = 6
-    NickDMS['n_cues'] = 1
-    NickDMS['n_RFs'] = 1
-    NickDMS['var_delay'] = False
-    NickDMS['n_output'] = 3
-    NickDMS['var_delay_max'] = 200
-    NickDMS['mask_duration'] = 50
-    NickDMS['timing'] = nick_timing
+    MonkeyDMS = {}
+    MonkeyDMS['name'] = 'MonkeyDMS'
+    MonkeyDMS['n_motion_dirs'] = 6
+    MonkeyDMS['n_cues'] = 1
+    MonkeyDMS['n_RFs'] = 1
+    MonkeyDMS['var_delay'] = False
+    MonkeyDMS['n_output'] = 3
+    MonkeyDMS['var_delay_max'] = 200
+    MonkeyDMS['mask_duration'] = 60
+    MonkeyDMS['trial_length'] = sum(monkey_timing.values())
+    MonkeyDMS['timing'] = monkey_timing
 
-
-    task_list = [DMS, DMRS45, DMRS90, DMRS180, DMRS270, DMC, DelayGo, ABBA, ABCA, ProRetroWM, NickDMS]
+    task_list = [DMS, DMRS45, DMRS90, DMRS180, DMRS270, DMC, \
+        DelayGo, ABBA, ABCA, ProRetroWM, MonkeyDMS]
 
     return task_list
 

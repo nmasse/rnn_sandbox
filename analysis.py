@@ -23,10 +23,29 @@ def decode_signal(X, y, timesteps, k_folds=4):
             ss.fit(X_tr)
             X_tr = ss.transform(X_tr)
             X_te = ss.transform(X_te)
-            svm = SVC(C=1.0, kernel='linear', max_iter=2000, decision_function_shape='ovr', shrinking=False, tol=1e-3).fit(X_tr, y_tr)
+            svm = SVC(C=1.0, kernel='linear', max_iter=1000, decision_function_shape='ovr', shrinking=False, tol=1e-3).fit(X_tr, y_tr)
             svm_acc[t, i] = svm.score(X_te, y_te)
 
     return np.mean(svm_acc, axis=-1)
+
+def accuracy_all_tasks(policy, labels, mask, rule, possible_rules):
+
+    accuracies = []
+    for i in possible_rules:
+        idx = np.where(rule == i)[0]
+        acc = accuracy_SL(policy[idx, ...], labels[idx, ...], mask[idx, ...])
+        accuracies.append(acc)
+
+    return accuracies
+
+def accuracy_SL(policy, labels, mask):
+
+    labels_amax = np.argmax(labels,axis=-1)
+    policy_amax = np.argmax(policy,axis=-1)
+    non_fix_period = np.float32(labels_amax > 0)
+    task_mask = mask * non_fix_period
+
+    return np.sum(task_mask * (labels_amax == policy_amax)) / np.sum(task_mask)
 
 def average_frs_by_condition(h, sample, test):
     # Identify sample/test conditions

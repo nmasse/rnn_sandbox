@@ -1,7 +1,7 @@
 import numpy as np
 from tasks import Task
 
-class NickDMS(Task.Task):
+class MonkeyDMS(Task.Task):
     # TODO: must resolve how outputs are set (e.g. in case of delay go and dms being trained in same net)
     # currently, assuming fix/match/nonmatch are 0/1/2
 
@@ -10,16 +10,16 @@ class NickDMS(Task.Task):
         # Initialize from superclass Task
         super().__init__(task_name, rule_id, var_delay, dt, tuning, timing, shape, misc)
 
-        # Hard-require that the timing for NickDMS be as defined in Nick's original task
-        nick_timing = {'dead_time'    : 100,
+        # Hard-require that the timing for MonkeyDMS be as defined in Nick's original task
+        nick_timing = {'dead_time'    : 0,
                        'fix_time'     : 500,
-                       'sample_time'  : 500,
-                       'delay_time'   : 1000,
-                       'test_time'    : 500}
+                       'sample_time'  : 660,
+                       'delay_time'   : 1020,
+                       'test_time'    : 660}
         for k, v in nick_timing.items():
             if timing[k] != v:
                 error = f"{k} should be {v}, but was {timing[k]}"
-                raise ValueError(f'Incorrect timing for Nick DMS; {error}')
+                raise ValueError(f'Incorrect timing for MonkeyDMS; {error}')
 
     def _get_trial_info(self, batch_size):
         return super()._get_trial_info(batch_size)
