@@ -158,6 +158,7 @@ class TaskManager:
             'reward_matrix', 'sample', 'rule']
         if include_test:
             keys.append('test')
+
         return tuple([trial_info[k].squeeze() for k in keys])
 
 
@@ -399,7 +400,7 @@ def default_tasks():
     ABBA['trial_length'] = 0
     for k, v in abba_timing.items():
         if 'delay' in k or 'test' in k:
-            ABBA['trial_length'] += (ABBA['n_tests'] * v)
+            ABBA['trial_length'] += (ABBA['n_test'] * v)
         else:
             ABBA['trial_length'] += v
     ABBA['timing'] = abba_timing
@@ -420,7 +421,7 @@ def default_tasks():
     ABCA['trial_length'] = 0
     for k, v in abba_timing.items():
         if 'delay' in k or 'test' in k:
-            ABCA['trial_length'] += (ABBA['n_tests'] * v)
+            ABCA['trial_length'] += (ABBA['n_test'] * v)
         else:
             ABCA['trial_length'] += v
     ABCA['timing'] = abba_timing
