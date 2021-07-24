@@ -10,10 +10,10 @@ from sklearn.svm import SVC
 
 
 def decode_signal(X, y, timesteps, k_folds=4):
-    print(y.shape, y.ndim)
+
+    ''' Set up decoder, x-validate via k folds'''
     if y.ndim==2:
         y = y[:,0]
-    ''' Set up decoder, x-validate via k folds'''
     svm_acc = np.zeros((len(timesteps), k_folds))
     skf = StratifiedKFold(n_splits=k_folds)
     skf.get_n_splits(X[:, 0, :], y)
