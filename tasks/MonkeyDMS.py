@@ -96,8 +96,8 @@ class MonkeyDMS(Task.Task):
             trial_info['sample'][i,0] = sample_dir
             trial_info['test'][i,0]   = test_dir
             trial_info['rule'][i]   = self.rule_id
-            trial_info['catch'][i]  = catch
-            trial_info['match'][i]  = match
+            trial_info['catch'][i]  = bool(catch)
+            trial_info['match'][i]  = bool(match)
             timing_dict = {'fix_bounds'     : fix_bounds,
                            'sample_bounds'  : sample_bounds,
                            'delay_bounds'   : delay_bounds,

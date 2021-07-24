@@ -171,8 +171,9 @@ class TaskManager:
                                                 size=(batch_size, self.trial_length, self.n_input)),
                       'sample'          :  -np.ones((batch_size, self.n_sample), dtype=np.int8),
                       'reward_matrix'   :  np.zeros((batch_size, self.trial_length, self.n_output), dtype=np.float32),
-                      'timing'          : [],
-                      'task_specific'   : []}
+                      'retrospective'   :  np.full((batch_size), False),
+                      'timing'          :  [],
+                      'task_specific'   :  []}
         if include_test:
             trial_info['test'] = -np.ones((batch_size, self.n_test), dtype=np.int8)
 
