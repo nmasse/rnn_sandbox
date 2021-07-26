@@ -1,4 +1,11 @@
 
+tc_soma:
+  - 100
+  - 100
+  
+tc_modulator:
+  - 20
+  - 100
 
 rnn_weight:
   - 0.05
@@ -22,13 +29,13 @@ II_kappa:
 
 alpha_EI:
   - 0.
-  - 0.25
+  - 0.3
 alpha_EE:
   - 0.
-  - 0.25
+  - 0.3
 alpha_II:
   - 0.
-  - 0.25
+  - 0.3
 
 inp_E_kappa:
   - 0.05
@@ -38,48 +45,48 @@ inp_I_kappa:
   - 0.25
 inp_E_topo:
   - 0.
-  - 2.5
+  - 2.
 inp_I_topo:
   - 0.
-  - 2.5
+  - 2.
 
 EE_topo:
   - 0.
-  - 2.5
+  - 2.
 EI_topo:
   - 0.
-  - 2.5
+  - 2.
 IE_topo:
   - 0.
-  - 2.5
+  - 2.
 II_topo:
   - 0.
-  - 2.5
+  - 2.
 
 
 mod_EE_weight:
   - 0.
-  - 0.002
+  - 0.001
 mod_EI_weight:
   - 0.
-  - 0.002
+  - 0.001
 mod_IE_weight:
   - 0.
-  - 0.002
+  - 0.001
 mod_II_weight:
   - 0.
-  - 0.002
+  - 0.001
 
 
 EE_topo_mod:
   - 0.
-  - 1.
+  - 0.000000000001
 EI_topo_mod:
   - 0.
-  - 1.
+  - 0.000000000001
 IE_topo_mod:
   - 0.
-  - 1.
+  - 0.000000000001
 II_topo_mod:
   - 0.
-  - 1.
+  - 0.000000000001

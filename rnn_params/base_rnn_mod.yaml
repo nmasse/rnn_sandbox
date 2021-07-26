@@ -2,8 +2,7 @@
 
 dt: 20
 tc_soma: 100
-tc_modulator: 100
-mod_beta: 0.001
+tc_modulator: 50
 n_exc: 800
 n_inh: 200
 n_input: 41

@@ -1,4 +1,5 @@
 import numpy as np
+import gym
 import copy
 import tasks.ABBA
 import tasks.DelayGo
@@ -8,6 +9,75 @@ import tasks.MonkeyDMS
 import tasks.ProRetroWM
 import tensorflow as tf
 import matplotlib.pyplot as plt
+
+
+
+class TaskGym(gym.Env):
+
+    def __init__(self, task_list, batch_size, buffer_size=1000, new_task_prob=1.):
+
+        self.n_tasks = len(task_list)
+        self.new_task_prob = new_task_prob
+        self.batch_size = batch_size
+        self.buffer_size = buffer_size
+        self.task_manager = TaskManager(task_list, buffer_size)
+        self.trials_per_task = [self.task_manager.generate_batch(buffer_size, rule=n) for n in range(self.n_tasks)]
+        self.task_id = np.random.choice(self.n_tasks, size = (batch_size))
+        self.trial_id = np.random.choice(buffer_size, size = (batch_size))
+        self.time = np.zeros((batch_size), dtype=np.int32)
+
+
+    def reset_all(self):
+
+        observations = []
+        for i in range(self.batch_size):
+            observations.append(self.reset(i))
+
+        return np.stack(observations)
+
+
+    def reset(self, agent_id):
+
+        self.time[agent_id] = 0
+        new_task = np.random.choice([True, False], p=[self.new_task_prob, 1-self.new_task_prob])
+        if new_task:
+            self.task_id[agent_id] = np.random.choice(self.n_tasks)
+        self.trial_id[agent_id] = np.random.choice(self.buffer_size)
+
+        return self.trials_per_task[self.task_id[agent_id]][0][self.trial_id[agent_id], self.time[agent_id], :]
+
+    def step_all(self, actions):
+
+        rewards = []
+        dones = []
+        observations = []
+        for i in range(self.batch_size):
+            observation, reward, done  =self.step(i, actions[i])
+            observations.append(observation)
+            rewards.append(reward)
+            dones.append(done)
+
+        return np.stack(observations), np.stack(rewards), np.stack(dones)
+
+    def step(self, agent_id, action):
+
+        trial = self.trial_id[agent_id]
+        task = self.task_id[agent_id]
+        time = self.time[agent_id]
+
+        reward = self.trials_per_task[task][3][trial, time, action]
+        mask = self.trials_per_task[task][2][trial, time]
+        reward *= mask
+        if not reward == 0:
+            done = True
+            observation = self.reset(agent_id)
+        else:
+            done = False
+            self.time[agent_id] += 1
+            time = self.time[agent_id]
+            observation = self.trials_per_task[task][0][trial, time, :]
+
+        return observation, reward, done
 
 class TaskManager:
 
@@ -262,7 +332,7 @@ def monkey_DMS_task():
 
 def default_tasks():
 
-    generic_timing = {'dead_time'   : 0,
+    generic_timing = {'dead_time'   : 300,
                      'fix_time'     : 200,
                      'sample_time'  : 300,
                      'delay_time'   : 1000,
@@ -293,7 +363,7 @@ def default_tasks():
     DMS['distractor'] = False
     DMS['n_output'] = 3
     DMS['var_delay_max'] = 200
-    DMS['mask_duration'] = 60
+    DMS['mask_duration'] = 40
     DMS['n_sample'] = 1
     DMS['n_test'] = 1
     DMS['trial_length'] = sum(generic_timing.values())
@@ -308,7 +378,7 @@ def default_tasks():
     DMS_distractor['distractor'] = True
     DMS_distractor['n_output'] = 3
     DMS_distractor['var_delay_max'] = 200
-    DMS_distractor['mask_duration'] = 60
+    DMS_distractor['mask_duration'] = 40
     DMS_distractor['n_sample'] = 1
     DMS_distractor['n_test'] = 1
     DMS_distractor['trial_length'] = sum(generic_timing.values())
@@ -324,7 +394,7 @@ def default_tasks():
     DMRS45['distractor'] = False
     DMRS45['n_output'] = 3
     DMRS45['var_delay_max'] = 200
-    DMRS45['mask_duration'] = 60
+    DMRS45['mask_duration'] = 40
     DMRS45['n_sample'] = 1
     DMRS45['n_test'] = 1
     DMRS45['trial_length'] = sum(generic_timing.values())
@@ -340,7 +410,7 @@ def default_tasks():
     DMRS90['distractor'] = False
     DMRS90['n_output'] = 3
     DMRS90['var_delay_max'] = 200
-    DMRS90['mask_duration'] = 60
+    DMRS90['mask_duration'] = 40
     DMRS90['n_sample'] = 1
     DMRS90['n_test'] = 1
     DMRS90['trial_length'] = sum(generic_timing.values())
@@ -356,7 +426,7 @@ def default_tasks():
     DMRS180['distractor'] = False
     DMRS180['n_output'] = 3
     DMRS180['var_delay_max'] = 200
-    DMRS180['mask_duration'] = 60
+    DMRS180['mask_duration'] = 40
     DMRS180['n_sample'] = 1
     DMRS180['n_test'] = 1
     DMRS180['trial_length'] = sum(generic_timing.values())
@@ -372,7 +442,7 @@ def default_tasks():
     DMRS270['distractor'] = False
     DMRS270['n_output'] = 3
     DMRS270['var_delay_max'] = 200
-    DMRS270['mask_duration'] = 60
+    DMRS270['mask_duration'] = 40
     DMRS270['n_sample'] = 1
     DMRS270['n_test'] = 1
     DMRS270['trial_length'] = sum(generic_timing.values())
@@ -386,7 +456,7 @@ def default_tasks():
     DMC['var_delay'] = False
     DMC['n_output'] = 3
     DMC['var_delay_max'] = 200
-    DMC['mask_duration'] = 60
+    DMC['mask_duration'] = 40
     DMC['n_sample'] = 1
     DMC['n_test'] = 1
     DMC['trial_length'] = sum(generic_timing.values())
@@ -401,7 +471,7 @@ def default_tasks():
     DelayGo['categorization'] = True
     DelayGo['n_output'] = 3
     DelayGo['var_delay_max'] = 200
-    DelayGo['mask_duration'] = 60
+    DelayGo['mask_duration'] = 40
     DelayGo['n_sample'] = 1
     DelayGo['n_test'] = 1
     DelayGo['trial_length'] = sum(generic_timing.values())
@@ -415,7 +485,7 @@ def default_tasks():
     ABBA['var_delay'] = False
     ABBA['n_output'] = 3
     ABBA['var_delay_max'] = 200
-    ABBA['mask_duration'] = 60
+    ABBA['mask_duration'] = 40
     ABBA['n_sample'] = 1
     ABBA['n_test'] = 3
     ABBA['match_test_prob'] = 0.5
@@ -436,7 +506,7 @@ def default_tasks():
     ABCA['var_delay'] = False
     ABCA['n_output'] = 3
     ABCA['var_delay_max'] = 200
-    ABCA['mask_duration'] = 60
+    ABCA['mask_duration'] = 40
     ABCA['n_sample'] = 1
     ABCA['n_test'] = 3
     ABCA['match_test_prob'] = 0.5
@@ -460,7 +530,7 @@ def default_tasks():
     ProRetroWM['categorization'] = True
     ProRetroWM['n_output'] = 3
     ProRetroWM['var_delay_max'] = 200
-    ProRetroWM['mask_duration'] = 60
+    ProRetroWM['mask_duration'] = 40
     ProRetroWM['trial_length'] = 0
     for k, v in pro_ret_timing.items():
         if 'cue' not in k:
@@ -475,13 +545,13 @@ def default_tasks():
     MonkeyDMS['var_delay'] = False
     MonkeyDMS['n_output'] = 3
     MonkeyDMS['var_delay_max'] = 200
-    MonkeyDMS['mask_duration'] = 60
+    MonkeyDMS['mask_duration'] = 40
     MonkeyDMS['n_sample'] = 1
     MonkeyDMS['n_test'] = 1
     MonkeyDMS['trial_length'] = sum(monkey_timing.values())
     MonkeyDMS['timing'] = monkey_timing
 
-    task_list = [DMS, DMS_distractor, DMRS45, DMRS90, DMRS180, DMRS270, DMC, \
+    task_list = [DMS, DMS_distractor, DMRS90, DMC, \
         DelayGo, ProRetroWM]
 
 

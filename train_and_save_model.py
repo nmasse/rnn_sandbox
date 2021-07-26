@@ -7,7 +7,7 @@ import os
 import copy
 import layers
 import analysis
-from actor import Actor
+from actor import ActorSL
 from TaskManager import TaskManager, default_tasks
 import yaml
 import time
@@ -34,39 +34,17 @@ class Agent:
         stim = TaskManager(tasks, batch_size=args.batch_size, tf2=False)
 
         rnn_params = define_dependent_params(rnn_params, stim)
-        self.actor = Actor(args, rnn_params, learning_type='supervised')
+        self.actor = ActorSL(args, rnn_params, learning_type='supervised')
 
         self.training_batches = [stim.generate_batch(args.batch_size) for _ in range(args.n_stim_batches)]
         self.dms_batch = stim.generate_batch(args.batch_size, rule=0)
-
+        self.sample_decode_time = [(200+300+500)//rnn_params.dt, (200+300+980)//rnn_params.dt]
 
         print('Trainable variables...')
         for v in self.actor.model.trainable_variables:
             print(v.name, v.shape)
 
         print(self.actor.model.summary())
-
-
-    def gae_target(self, rewards, values, last_value, done):
-
-        gae = np.zeros(rewards.shape, dtype=np.float32)
-        gae_cumulative = 0.
-        nsteps = rewards.shape[0]
-        for k in reversed(range(nsteps)):
-            if k == nsteps - 1:
-                nextnonterminal = 1.0 - done[-1,:]
-                nextvalues = last_value
-            else:
-                nextnonterminal = 1.0 - done[k+1,:]
-                nextvalues = values[k+1,:]
-
-            delta = rewards[k, :] + args.gamma * nextvalues * nextnonterminal - values[k, :]
-            gae_cumulative = args.gamma * args.lmbda * gae_cumulative * nextnonterminal + delta
-            gae[k,:] = gae_cumulative
-        n_step_targets = gae + values
-
-        return gae, np.float32(n_step_targets)
-
 
 
     def train(self, rnn_params):
@@ -76,7 +54,7 @@ class Agent:
             attempts += 1
             self.actor.RNN.generate_new_weights(rnn_params)
             print('Determing steady-state values...')
-            h_init, m_init, h = self.actor.determine_steady_state(self.training_batches[0])
+            h_init, m_init, h = self.actor.determine_steady_state(self.training_batches[0][0])
             print(f"Steady-state activity {np.mean(h_init):2.4f}")
 
             if np.mean(h_init) < 0.01 or np.mean(h_init) > 1:
@@ -87,16 +65,12 @@ class Agent:
                 return
 
 
-        print('Determing initial sample decoding accuracy...')
-        h = self.actor.run_batch(self.dms_batch, h_init, m_init)
-        sample_decode_time = [(200+300+600)//rnn_params.dt, (200+300+980)//rnn_params.dt]
-        sample_decoding = analysis.decode_signal(
-                            np.float32(h),
+        h, _ = self.actor.forward_pass(self.dms_batch[0], copy.copy(h_init), copy.copy(m_init))
+        results['sample_decoding'] = analysis.decode_signal(
+                            h.numpy(),
                             np.int32(self.dms_batch[4]),
-                            sample_decode_time)
-
-
-        sd = sample_decoding
+                            self.sample_decode_time)
+        sd = results['sample_decoding']
         print(f"Decoding accuracy {sd[0]:1.3f}, {sd[1]:1.3f}")
 
         print('Starting main training loop...')
@@ -108,14 +82,15 @@ class Agent:
                 self._args.learning_rate,
                 j / self._args.n_learning_rate_ramp * self._args.learning_rate)
 
-            loss, h, policy = self.actor.train(batch, h_init, m_init, learning_rate)
+            loss, h, policy = self.actor.train(batch, copy.copy(h_init), copy.copy(m_init), learning_rate)
 
-            accuracies = analysis.accuracy_all_tasks(
+            accuracies = analysis.accuracy_SL_all_tasks(
                                     np.float32(policy),
                                     np.float32(batch[1]),
                                     np.float32(batch[2]),
                                     np.int32(batch[5]),
-                                    list(range(self.n_tasks)))
+                                    np.arange(self.n_tasks))
+                                    
             print(f'Iteration {j} Loss {loss:1.4f} Accuracy {np.mean(accuracies):1.3f} Mean activity {np.mean(h):2.4f} Time {time.time()-t0:2.2f}')
 
         self.actor.model.save(self._args.save_model_path)
