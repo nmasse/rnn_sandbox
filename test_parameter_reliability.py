@@ -12,16 +12,14 @@ from TaskManager import TaskManager, default_tasks
 import yaml
 import time
 import uuid
+import glob
 
-gpu_idx = 0
+gpu_idx = 3
 gpus = tf.config.experimental.list_physical_devices('GPU')
 tf.config.experimental.set_visible_devices(gpus[gpu_idx], 'GPU')
 tf.config.experimental.set_virtual_device_configuration(
     gpus[gpu_idx],
     [tf.config.experimental.VirtualDeviceConfiguration(memory_limit=5000)])
-
-#os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
-
 
 class Agent:
     def __init__(self, args, rnn_params):
@@ -127,26 +125,30 @@ class Agent:
         pickle.dump(results, open(save_fn, 'wb'))
 
 class ParameterReliabilityAssessor:
-    def __init__(self, args, params_list):
+    def __init__(self, args):
         self._args = args
-        self.params_list = params_list
+        self.params_files = glob.glob(f"{args.params_folder}*.yaml")
 
-    def assess_reliability(self):
-        for params in self.params_list:
-            agent = Agent(self.args, params)
-            agent.train(params, self._args.n_networks)
-
+    def assess_reliability(self, n_networks):
+        for params_fn in self.params_files:
+            rnn_params = yaml.load(open(args.rnn_params_fn), Loader=yaml.FullLoader)
+            rnn_params = argparse.Namespace(**rnn_params)
+            p = yaml.load(open(params_fn), Loader=yaml.FullLoader)
+            for k, v in p.items():
+                if hasattr(rnn_params, k):
+                    setattr(rnn_params, k, v)
+            agent = Agent(self._args, rnn_params)
+            agent.train(rnn_params, n_networks)
 
 def define_dependent_params(params, stim):
 
-    params.n_input   = stim.n_input
-    params.n_actions = stim.n_output
-    params.n_hidden = params.n_exc + params.n_inh
+    params.n_input     = stim.n_input
+    params.n_actions   = stim.n_output
+    params.n_hidden    = params.n_exc + params.n_inh
     params.n_bottom_up = stim.n_motion_tuned
-    params.n_top_down = stim.n_rule_tuned + stim.n_cue_tuned + stim.n_fix_tuned
+    params.n_top_down  = stim.n_rule_tuned + stim.n_cue_tuned + stim.n_fix_tuned
 
     return params
-
 
 
 
@@ -157,6 +159,7 @@ parser.add_argument('--n_stim_batches', type=int, default=20)
 parser.add_argument('--learning_rate', type=float, default=0.005)
 parser.add_argument('--n_learning_rate_ramp', type=int, default=10)
 parser.add_argument('--rnn_params_fn', type=str, default='./rnn_params/base_rnn_mod.yaml')
+parser.add_argument('--params_folder', type=str, default='./rnn_params/params_to_verify/')
 parser.add_argument('--save_path', type=str, default='saved_models/temp0')
 parser.add_argument('--save_frs_by_condition', type=bool, default=False)
 
@@ -167,11 +170,10 @@ for k, v in vars(args).items():
     print(k,':', v)
 print()
 
-rnn_params = yaml.load(open(args.rnn_params_fn), Loader=yaml.FullLoader)
-rnn_params = argparse.Namespace(**rnn_params)
-agent = Agent(args, rnn_params)
-agent.train(rnn_params, 10)
+################################################################################
+# Make ParameterReliabilityAssessor() object and test all param sets in folder
+################################################################################
+pa = ParameterReliabilityAssessor(args)
+pa.assess_reliability(10)
 
-# Otherwise: if testing out a list of parameters,
-# make a ParameterReliabilityAssessor object and run
-# the assess_reliability() method
+
