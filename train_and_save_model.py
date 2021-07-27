@@ -90,7 +90,7 @@ class Agent:
                                     np.float32(batch[2]),
                                     np.int32(batch[5]),
                                     np.arange(self.n_tasks))
-                                    
+
             print(f'Iteration {j} Loss {loss:1.4f} Accuracy {np.mean(accuracies):1.3f} Mean activity {np.mean(h):2.4f} Time {time.time()-t0:2.2f}')
 
         self.actor.model.save(self._args.save_model_path)
@@ -110,11 +110,10 @@ def define_dependent_params(params, stim):
 
 
 
-
 parser = argparse.ArgumentParser('')
-parser.add_argument('--n_iterations', type=int, default=1000)
-parser.add_argument('--batch_size', type=int, default=1024)
-parser.add_argument('--n_stim_batches', type=int, default=50)
+parser.add_argument('--n_iterations', type=int, default=10000)
+parser.add_argument('--batch_size', type=int, default=256)
+parser.add_argument('--n_stim_batches', type=int, default=250)
 parser.add_argument('--learning_rate', type=float, default=0.002)
 parser.add_argument('--n_learning_rate_ramp', type=int, default=10)
 parser.add_argument('--rnn_params_fn', type=str, default='./rnn_params/base_rnn_mod.yaml')

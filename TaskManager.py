@@ -20,11 +20,21 @@ class TaskGym(gym.Env):
         self.new_task_prob = new_task_prob
         self.batch_size = batch_size
         self.buffer_size = buffer_size
+
         self.task_manager = TaskManager(task_list, buffer_size)
+        self.n_bottom_up = self.task_manager.n_motion_tuned + self.task_manager.n_fix_tuned + self.task_manager.n_cue_tuned
         self.trials_per_task = [self.task_manager.generate_batch(buffer_size, rule=n) for n in range(self.n_tasks)]
         self.task_id = np.random.choice(self.n_tasks, size = (batch_size))
         self.trial_id = np.random.choice(buffer_size, size = (batch_size))
+
         self.time = np.zeros((batch_size), dtype=np.int32)
+
+    def split_observation(self, observation):
+        # split neural input into bottom-up (motion direction activity) for RNN
+        # and top-down (context/rule) for Cont Actor RL
+        bottom_up = observation[:, :self.n_bottom_up]
+        top_down = observation[:, self.n_bottom_up:]
+        return bottom_up, top_down
 
 
     def reset_all(self):
@@ -33,7 +43,8 @@ class TaskGym(gym.Env):
         for i in range(self.batch_size):
             observations.append(self.reset(i))
 
-        return np.stack(observations)
+        observations = np.stack(observations)
+        return self.split_observation(observations)
 
 
     def reset(self, agent_id):
@@ -52,12 +63,14 @@ class TaskGym(gym.Env):
         dones = []
         observations = []
         for i in range(self.batch_size):
-            observation, reward, done  =self.step(i, actions[i])
+            observation, reward, done = self.step(i, actions[i])
             observations.append(observation)
             rewards.append(reward)
             dones.append(done)
 
-        return np.stack(observations), np.stack(rewards), np.stack(dones)
+        bottom_up, top_down = self.split_observation(np.stack(observations))
+
+        return bottom_up, top_down, np.stack(rewards), np.stack(dones)
 
     def step(self, agent_id, action):
 
@@ -78,6 +91,8 @@ class TaskGym(gym.Env):
             observation = self.trials_per_task[task][0][trial, time, :]
 
         return observation, reward, done
+
+
 
 class TaskManager:
 
@@ -282,7 +297,7 @@ class TaskManager:
         """
 
         motion_tuning = np.zeros((self.n_input, self.n_RFs, self.n_motion_dirs))
-        fix_tuning    = np.zeros((self.n_input, 1))
+        fix_tuning    = np.zeros((self.n_input, self.n_fix_tuned))
         rule_tuning   = np.zeros((self.n_input, self.n_rule_tuned))
         cue_tuning    = np.zeros((self.n_input, self.n_cue_tuned))
 
@@ -305,7 +320,7 @@ class TaskManager:
         ###
         # Generate fixation tuning
         for n in range(self.n_fix_tuned):
-            fix_tuning[self.n_motion_tuned + n, 0] = self.tuning_height
+            fix_tuning[self.n_motion_tuned + n, n] = self.tuning_height
 
         ###
         # Generate rule tuning
@@ -344,7 +359,7 @@ def default_tasks():
     abba_timing   = {'dead_time'    : 0,
                      'fix_time'     : 200,
                      'sample_time'  : 300,
-                     'delay_time'   : 300,
+                     'delay_time'   : 500,
                      'test_time'    : 300}
 
     monkey_timing = {'dead_time'    : 0,
@@ -363,7 +378,7 @@ def default_tasks():
     DMS['distractor'] = False
     DMS['n_output'] = 3
     DMS['var_delay_max'] = 200
-    DMS['mask_duration'] = 40
+    DMS['mask_duration'] = 0
     DMS['n_sample'] = 1
     DMS['n_test'] = 1
     DMS['trial_length'] = sum(generic_timing.values())
@@ -471,7 +486,7 @@ def default_tasks():
     DelayGo['categorization'] = True
     DelayGo['n_output'] = 3
     DelayGo['var_delay_max'] = 200
-    DelayGo['mask_duration'] = 40
+    DelayGo['mask_duration'] = 0
     DelayGo['n_sample'] = 1
     DelayGo['n_test'] = 1
     DelayGo['trial_length'] = sum(generic_timing.values())
@@ -553,7 +568,6 @@ def default_tasks():
 
     task_list = [DMS, DMS_distractor, DMRS90, DMC, \
         DelayGo, ProRetroWM]
-
 
     return task_list
 

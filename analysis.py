@@ -84,7 +84,6 @@ def average_frs_by_condition(h, sample, test):
         test = test[:,0]
     sample_rng = np.unique(sample)
     test_rng   = np.unique(test)
-    print(sample.shape, test.shape, sample.ndim, test.ndim)
     conditions = np.hstack((sample.squeeze()[:,np.newaxis],
         test.squeeze()[:,np.newaxis]))
     unique_conds = np.unique(conditions, axis=0)

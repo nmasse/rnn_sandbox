@@ -2,7 +2,7 @@
 tc_soma:
   - 100
   - 100
-  
+
 tc_modulator:
   - 20
   - 100
@@ -66,16 +66,16 @@ II_topo:
 
 mod_EE_weight:
   - 0.
-  - 0.001
+  - 0.002
 mod_EI_weight:
   - 0.
-  - 0.001
+  - 0.002
 mod_IE_weight:
   - 0.
-  - 0.001
+  - 0.002
 mod_II_weight:
   - 0.
-  - 0.001
+  - 0.002
 
 
 EE_topo_mod:

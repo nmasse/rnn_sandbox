@@ -13,7 +13,8 @@ class Model():
         self._args = args
         self.learning_type = learning_type
         self.max_weight_value = 999.
-
+        self.top_down_trainable = True if learning_type=='supervised' else False
+        #self.top_down_trainable = True
         self._set_pref_dirs()
         self.model = self.create_network()
 
@@ -42,14 +43,14 @@ class Model():
         h_input = tf.keras.Input((self._args.n_hidden,)) # Previous activity
         m_input = tf.keras.Input((self._args.n_hidden,)) # Previous activity
 
-        botom_up_current = Linear(
+        bottom_up_current = Linear(
                             w_bottom_up,
                             trainable=False,
                             name='bottom_up')(x_input)
 
         top_down_current = Linear(
                             w_top_down,
-                            trainable=True,
+                            trainable=self.top_down_trainable,
                             name='top_down')(y_input)
 
         rec_current = Recurrent(
@@ -70,7 +71,7 @@ class Model():
         effective_mod = 1 / (1 + tf.nn.relu(modulator))
 
         noise = tf.random.normal(tf.shape(h_input), mean=0., stddev=noise_rnn_sd)
-        soma_input = botom_up_current + top_down_current + rec_current * effective_mod  + noise
+        soma_input = bottom_up_current + top_down_current + rec_current * effective_mod #+ noise
         h = Evolve(alpha_soma, trainable=False, name='alpha_soma')((h_input, soma_input))
         h = tf.nn.relu(h)
 
@@ -141,12 +142,14 @@ class Model():
         '''Motion direcion input neurons will have prefered direction, but
         fixation neurons will not. Fixation neurons will be at the end of
         the array'''
-        input_phase = np.linspace(0, 2*np.pi, self._args.n_bottom_up)
+        input_phase = np.linspace(0, 2*np.pi, self._args.n_motion_tuned)
         exc_phase = np.linspace(0, 2*np.pi, self._args.n_exc)
         inh_phase = np.linspace(0, 2*np.pi, self._args.n_inh)
         rnn_phase = np.concatenate((exc_phase, inh_phase), axis=-1)
 
         self._inp_rnn_phase = np.cos(input_phase[:, np.newaxis] - rnn_phase[np.newaxis, :])
+        N = self._args.n_bottom_up - self._args.n_motion_tuned
+        self._inp_rnn_phase = np.vstack((self._inp_rnn_phase, np.zeros((N, self._args.n_hidden), dtype = np.float32)))
         self._rnn_rnn_phase = np.cos(rnn_phase[:, np.newaxis] - rnn_phase[np.newaxis, :])
 
 
@@ -159,23 +162,18 @@ class Model():
 
     def initialize_top_down_weights(self):
 
-        w = np.random.normal(
-                        0,
-                        2./np.sqrt(self._args.n_hidden),
-                        size=(self._args.n_top_down, self._args.n_hidden)).astype(np.float32)
-        return w
+        initializer = tf.keras.initializers.GlorotNormal()
+        w = initializer(shape=(self._args.n_top_down, self._args.n_hidden))
+
+        return tf.cast(w, tf.float32)
 
     def initialize_output_weights(self):
 
-        w_policy = np.random.normal(
-                                0,
-                                2./np.sqrt(self._args.n_hidden),
-                                size=(self._args.n_hidden, self._args.n_actions)).astype(np.float32)
-        w_critic = np.random.normal(
-                                0,
-                                2./np.sqrt(self._args.n_hidden),
-                                size=(self._args.n_hidden, 1)).astype(np.float32)
-        return w_policy, w_critic
+        initializer = tf.keras.initializers.GlorotNormal()
+        w_policy = 0.01 * initializer(shape=(self._args.n_hidden, self._args.n_actions))
+        w_critic = 0.01 * initializer(shape=(self._args.n_hidden, 1))
+
+        return tf.cast(w_policy, tf.float32), tf.cast(w_critic, tf.float32)
 
 
     def initialize_bottom_up_weights(self):

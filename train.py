@@ -15,7 +15,7 @@ import time
 import uuid
 
 
-gpu_idx = 1
+gpu_idx = 2
 gpus = tf.config.experimental.list_physical_devices('GPU')
 tf.config.experimental.set_visible_devices(gpus[gpu_idx], 'GPU')
 tf.config.experimental.set_virtual_device_configuration(
@@ -33,8 +33,12 @@ class Agent:
         self._param_ranges = param_ranges
 
         tasks = default_tasks()
+        self._args.tasks = tasks
         self.n_tasks = len(tasks)
-        stim = TaskManager(tasks, batch_size=args.batch_size, tf2=False)
+
+        alpha = rnn_params.dt / rnn_params.tc_soma
+        noise_std = np.sqrt(2/alpha) * rnn_params.noise_input_sd
+        stim = TaskManager(tasks, batch_size=args.batch_size, input_noise = noise_std, tf2=False)
 
         rnn_params = define_dependent_params(rnn_params, stim)
         self.actor = ActorSL(args, rnn_params, learning_type='supervised')
@@ -149,8 +153,9 @@ def define_dependent_params(params, stim):
     params.n_input   = stim.n_input
     params.n_actions = stim.n_output
     params.n_hidden = params.n_exc + params.n_inh
-    params.n_bottom_up = stim.n_motion_tuned
-    params.n_top_down = stim.n_rule_tuned + stim.n_cue_tuned + stim.n_fix_tuned
+    params.n_bottom_up = stim.n_motion_tuned + stim.n_cue_tuned + stim.n_fix_tuned
+    params.n_motion_tuned = stim.n_motion_tuned
+    params.n_top_down = stim.n_rule_tuned
 
     return params
 
@@ -158,7 +163,7 @@ def define_dependent_params(params, stim):
 parser = argparse.ArgumentParser('')
 parser.add_argument('--n_iterations', type=int, default=250)
 parser.add_argument('--batch_size', type=int, default=256)
-parser.add_argument('--n_stim_batches', type=int, default=20)
+parser.add_argument('--n_stim_batches', type=int, default=250)
 parser.add_argument('--learning_rate', type=float, default=0.005)
 parser.add_argument('--n_learning_rate_ramp', type=int, default=10)
 parser.add_argument('--save_frs_by_condition', type=bool, default=False)
@@ -166,7 +171,7 @@ parser.add_argument('--gamma', type=float, default=0.0)
 parser.add_argument('--lmbda', type=float, default=0.0)
 parser.add_argument('--rnn_params_fn', type=str, default='./rnn_params/base_rnn_mod.yaml')
 parser.add_argument('--params_range_fn', type=str, default='./rnn_params/param_ranges.yaml')
-parser.add_argument('--save_path', type=str, default='./results/test')
+parser.add_argument('--save_path', type=str, default='./results/run_270721')
 
 
 args = parser.parse_args()

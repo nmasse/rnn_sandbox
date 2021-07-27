@@ -10,7 +10,8 @@ n_fix: 1
 n_rule: 7
 n_actions: 3
 n_reward_levels: 3
-noise_rnn_sd: 0.05
+noise_rnn_sd: 0.0
+noise_input_sd: 0.05
 
 init_exc: 0.2 #was 0.1
 init_inh: 0.4 #was 0.2
@@ -19,22 +20,22 @@ init_mod: 0.1
 rnn_weight: 0.1
 input_weight: 0.1
 
-EE_kappa: 0.12 #was 0.14
+EE_kappa: 0.11 #was 0.14
 EI_kappa: 0.2
 IE_kappa: 0.2
 II_kappa: 0.2
 
 E_bias_mean: 0.0
-E_bias_std: 0.01 #was 0.01
+E_bias_std: 0.000000000001
 I_bias_mean: 0.0
-I_bias_std: 0.01 #was 0.01
+I_bias_std: 0.000000000001
 
 alpha_EI: 0.1
-alpha_EE: 0.1
+alpha_EE: 0.0
 alpha_II: 0.
 
-inp_E_kappa: 0.16
-inp_I_kappa: 0.16
+inp_E_kappa: 0.15
+inp_I_kappa: 0.15
 inp_E_topo: 2.
 inp_I_topo: 1.
 
