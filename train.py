@@ -5,7 +5,6 @@ import pickle
 import matplotlib.pyplot as plt
 import os
 import copy
-import matplotlib.pyplot as plt
 import layers
 import analysis
 from actor import ActorSL

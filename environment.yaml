@@ -18,9 +18,9 @@ dependencies:
   - tini=0.18.0
   - matplotlib=3.3.1
   - numpy=1.18.5
-  - cudatoolkit=11.0
-  - cudnn=8.0
-  - uuid
+  - cudatoolkit=11.3
+  - cudnn=8.2
+  #- uuid
   - pip:
     - tensorflow-gpu==2.5.0
     - tensorflow-probability==0.12.2
