@@ -5,7 +5,7 @@ class DMRS(Task.Task):
     # TODO: must resolve how outputs are set (e.g. in case of delay go and dms being trained in same net)
     # currently, assuming fix/match/nonmatch are 0/1/2
 
-    def __init__(self, task_name, rule_id, var_delay, dt, tuning, timing, shape, misc):
+    def __init__(self, task_name, rule_id, var_delay, dt, tuning, timing, shape, misc, same_RF=True):
 
         # Initialize from superclass Task
         super().__init__(task_name, rule_id, var_delay, dt, tuning, timing, shape, misc)
@@ -14,6 +14,7 @@ class DMRS(Task.Task):
         self.rotation   = misc['rotation']
         self.distractor = misc['distractor']
         self.task_name  = 'DMRS' if (self.rotation != 0) else 'DMS'
+        self.same_RF = same_RF
 
     def _get_trial_info(self, batch_size):
         return super()._get_trial_info(batch_size)
@@ -36,8 +37,8 @@ class DMRS(Task.Task):
 
             # Set RFs
             sample_RF = np.random.choice(self.n_RFs)
-            test_RF   = np.random.choice(self.n_RFs)
-            dist_RF   = sample_RF # distractor RF
+            test_RF   = sample_RF if self.same_RF else np.random.choice(self.n_RFs)
+            dist_RF   = sample_RF if self.same_RF else np.random.choice(self.n_RFs)# distractor RF
 
             # Determine test/distractor direction based on whether it's a match trial or not
             matching_dir = (sample_dir + match_rotation) % self.n_motion_dirs

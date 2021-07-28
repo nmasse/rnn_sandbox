@@ -3,10 +3,11 @@ from tasks import Task
 
 class DMC(Task.Task):
 
-    def __init__(self, task_name, rule_id, var_delay, dt, tuning, timing, shape, misc):
+    def __init__(self, task_name, rule_id, var_delay, dt, tuning, timing, shape, misc, same_RF=True):
 
         # Initialize from superclass Task
         super().__init__(task_name, rule_id, var_delay, dt, tuning, timing, shape, misc)
+        self.same_RF = same_RF
 
     def _get_trial_info(self, batch_size):
         return super()._get_trial_info(batch_size)
@@ -28,11 +29,11 @@ class DMC(Task.Task):
 
             # Set RFs
             sample_RF = np.random.choice(self.n_RFs)
-            test_RF   = np.random.choice(self.n_RFs)
+            test_RF   = sample_RF if self.same_RF else np.random.choice(self.n_RFs)
 
             # Determine test direction based on whether it's a match trial or not
             if not test_mode:
-                if match == 1: 
+                if match == 1:
                     # Do not use sample_dir as a match test stimulus
                     dir0 = int(sample_cat * (self.n_motion_dirs // 2))
                     dir1 = int(self.n_motion_dirs // 2 + sample_cat * self.n_motion_dirs // 2)
