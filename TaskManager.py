@@ -7,6 +7,8 @@ import tasks.DMC
 import tasks.DMRS
 import tasks.MonkeyDMS
 import tasks.ProRetroWM
+import tasks.ProWM
+import tasks.RetroWM
 import tensorflow as tf
 import matplotlib.pyplot as plt
 
@@ -552,6 +554,42 @@ def default_tasks():
             ProRetroWM['trial_length'] += v
     ProRetroWM['timing'] = pro_ret_timing
 
+    ProWM = {}
+    ProWM['name'] = 'ProWM'
+    ProWM['n_motion_dirs'] = 6
+    ProWM['n_sample'] = 2
+    ProWM['n_cues'] = ProWM['n_sample']
+    ProWM['n_RFs'] = ProWM['n_sample']
+    ProWM['n_test'] = 1
+    ProWM['var_delay'] = False
+    ProWM['categorization'] = True
+    ProWM['n_output'] = 3
+    ProWM['var_delay_max'] = 200
+    ProWM['mask_duration'] = 40
+    ProWM['trial_length'] = 0
+    for k, v in pro_ret_timing.items():
+        if 'cue' not in k:
+            ProWM['trial_length'] += v
+    ProWM['timing'] = pro_ret_timing
+
+    RetroWM = {}
+    RetroWM['name'] = 'RetroWM'
+    RetroWM['n_motion_dirs'] = 6
+    RetroWM['n_sample'] = 2
+    RetroWM['n_cues'] = RetroWM['n_sample']
+    RetroWM['n_RFs'] = RetroWM['n_sample']
+    RetroWM['n_test'] = 1
+    RetroWM['var_delay'] = False
+    RetroWM['categorization'] = True
+    RetroWM['n_output'] = 3
+    RetroWM['var_delay_max'] = 200
+    RetroWM['mask_duration'] = 40
+    RetroWM['trial_length'] = 0
+    for k, v in pro_ret_timing.items():
+        if 'cue' not in k:
+            RetroWM['trial_length'] += v
+    RetroWM['timing'] = pro_ret_timing
+
     MonkeyDMS = {}
     MonkeyDMS['name'] = 'MonkeyDMS'
     MonkeyDMS['n_motion_dirs'] = 6
@@ -567,7 +605,7 @@ def default_tasks():
     MonkeyDMS['timing'] = monkey_timing
 
     task_list = [DMS, DMS_distractor, DMRS90, DMC, \
-        DelayGo, ProRetroWM]
+        DelayGo, ProRetroWM, ProWM, RetroWM]
 
     return task_list
 
