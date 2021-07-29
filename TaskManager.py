@@ -7,16 +7,15 @@ import tasks.DMC
 import tasks.DMRS
 import tasks.MonkeyDMS
 import tasks.ProRetroWM
-import tasks.ProWM
-import tasks.RetroWM
+import tasks.ProWM 
+import tasks.RetroWM 
 import tensorflow as tf
 import matplotlib.pyplot as plt
 
 
-
 class TaskGym(gym.Env):
 
-    def __init__(self, task_list, batch_size, buffer_size=1000, new_task_prob=1.):
+    def __init__(self, task_list, batch_size, n_bottom_up, n_top_down, buffer_size=1000, new_task_prob=1.):
 
         self.n_tasks = len(task_list)
         self.new_task_prob = new_task_prob
@@ -24,29 +23,35 @@ class TaskGym(gym.Env):
         self.buffer_size = buffer_size
 
         self.task_manager = TaskManager(task_list, buffer_size)
-        self.n_bottom_up = self.task_manager.n_motion_tuned + self.task_manager.n_fix_tuned + self.task_manager.n_cue_tuned
+        self.n_bottom_up = n_bottom_up
+        self.n_top_down = n_top_down
         self.trials_per_task = [self.task_manager.generate_batch(buffer_size, rule=n) for n in range(self.n_tasks)]
         self.task_id = np.random.choice(self.n_tasks, size = (batch_size))
         self.trial_id = np.random.choice(buffer_size, size = (batch_size))
-
         self.time = np.zeros((batch_size), dtype=np.int32)
+
 
     def split_observation(self, observation):
         # split neural input into bottom-up (motion direction activity) for RNN
         # and top-down (context/rule) for Cont Actor RL
         bottom_up = observation[:, :self.n_bottom_up]
-        top_down = observation[:, self.n_bottom_up:]
+        top_down = observation[:, -self.n_top_down:]
         return bottom_up, top_down
 
 
     def reset_all(self):
 
         observations = []
+        masks = []
         for i in range(self.batch_size):
-            observations.append(self.reset(i))
+            obs, mask = self.reset(i)
+            observations.append(obs)
+            masks.append(mask)
 
         observations = np.stack(observations)
-        return self.split_observation(observations)
+        masks = np.stack(masks)
+        bottom_up, top_down = self.split_observation(observations)
+        return bottom_up, top_down, masks
 
 
     def reset(self, agent_id):
@@ -56,23 +61,27 @@ class TaskGym(gym.Env):
         if new_task:
             self.task_id[agent_id] = np.random.choice(self.n_tasks)
         self.trial_id[agent_id] = np.random.choice(self.buffer_size)
+        obs = self.trials_per_task[self.task_id[agent_id]][0][self.trial_id[agent_id], self.time[agent_id], :]
+        mask = self.trials_per_task[self.task_id[agent_id]][2][self.trial_id[agent_id], self.time[agent_id]]
 
-        return self.trials_per_task[self.task_id[agent_id]][0][self.trial_id[agent_id], self.time[agent_id], :]
+        return obs, mask
 
     def step_all(self, actions):
 
         rewards = []
         dones = []
         observations = []
+        masks = []
         for i in range(self.batch_size):
-            observation, reward, done = self.step(i, actions[i])
+            observation, mask, reward, done = self.step(i, actions[i])
             observations.append(observation)
+            masks.append(mask)
             rewards.append(reward)
             dones.append(done)
 
         bottom_up, top_down = self.split_observation(np.stack(observations))
 
-        return bottom_up, top_down, np.stack(rewards), np.stack(dones)
+        return bottom_up, top_down, np.stack(masks), np.stack(rewards), np.stack(dones)
 
     def step(self, agent_id, action):
 
@@ -85,15 +94,18 @@ class TaskGym(gym.Env):
         reward *= mask
         if not reward == 0:
             done = True
-            observation = self.reset(agent_id)
+            observation, mask = self.reset(agent_id)
         else:
             done = False
             self.time[agent_id] += 1
             time = self.time[agent_id]
             observation = self.trials_per_task[task][0][trial, time, :]
+            mask = self.trials_per_task[task][2][trial, time]
 
-        return observation, reward, done
+        #if agent_id == 0:
+        #    print(self.task_id[agent_id], self.trial_id[agent_id], self.time[agent_id], action, reward, done)
 
+        return observation, mask, reward, done
 
 
 class TaskManager:
@@ -190,6 +202,7 @@ class TaskManager:
             misc['n_sample']              = self.n_sample
             misc['n_test']                = self.n_test
             misc['n_RFs']                 = self.n_RFs # make this equal to max number of RFs
+
             task_args = [t['name'], i, t['var_delay'], self.dt, self.tuning, t['timing'], self.shape, misc]
             self.task_list.append(task(*task_args))
 
@@ -353,8 +366,9 @@ def default_tasks():
     generic_timing = {'dead_time'   : 300,
                      'fix_time'     : 200,
                      'sample_time'  : 300,
-                     'delay_time'   : 1000,
+                     'delay_time'   : 600,
                      'test_time'    : 300}
+
 
     pro_ret_timing = copy.copy(generic_timing)
     pro_ret_timing['cue_time'] = 200
@@ -489,7 +503,7 @@ def default_tasks():
     DelayGo['categorization'] = True
     DelayGo['n_output'] = 3
     DelayGo['var_delay_max'] = 200
-    DelayGo['mask_duration'] = 0
+    DelayGo['mask_duration'] = 40
     DelayGo['n_sample'] = 1
     DelayGo['n_test'] = 1
     DelayGo['trial_length'] = sum(generic_timing.values())

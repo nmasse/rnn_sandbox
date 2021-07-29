@@ -14,12 +14,14 @@ import time
 import uuid
 import glob
 
-gpu_idx = 3
+gpu_idx = 2
 gpus = tf.config.experimental.list_physical_devices('GPU')
 tf.config.experimental.set_visible_devices(gpus[gpu_idx], 'GPU')
+"""
 tf.config.experimental.set_virtual_device_configuration(
     gpus[gpu_idx],
-    [tf.config.experimental.VirtualDeviceConfiguration(memory_limit=5000)])
+    [tf.config.experimental.VirtualDeviceConfiguration(memory_limit=9000)])
+"""
 
 class Agent:
     def __init__(self, args, rnn_params):
@@ -49,15 +51,17 @@ class Agent:
         print(self.actor.model.summary())
 
 
-    def train(self, rnn_params, n_networks):
+    def train(self, rnn_params, n_networks, save_fn, original_task_accuracy=None):
 
-        # Set up records in advance, so each results file contains 
+        # Set up records in advance, so each results file contains
         # the results for all networks with the same parameter set
         sample_decoding = []
-        save_fn = os.path.join(self._args.save_path, 'results_'+str(uuid.uuid4())+'.pkl')
+        save_fn = os.path.join(self._args.save_path, save_fn)
+
         results = {
             'args': self._args,
             'rnn_params': rnn_params,
+            'original_task_accuracy': original_task_accuracy,
             'sample_decode_time': self.sample_decode_time,
             'loss'                 : [],
             'task_accuracy'        : [],
@@ -68,7 +72,7 @@ class Agent:
         }
 
         for k in range(n_networks):
-        
+
             # Generate the network weights
             self.actor.RNN.generate_new_weights(rnn_params)
             print('Determing steady-state values...')
@@ -104,7 +108,7 @@ class Agent:
                                         np.float32(batch[2]),
                                         np.int32(batch[5]),
                                         np.arange(self.n_tasks))
-                                        
+
                 print(f'Iteration {j} Loss {loss:1.4f} Accuracy {np.mean(accuracies):1.3f} Mean activity {np.mean(h):2.4f} Time {time.time()-t0:2.2f}')
                 tr_acc[j, :] = accuracies
                 tr_loss[j]   = loss.numpy()
@@ -125,20 +129,48 @@ class Agent:
         pickle.dump(results, open(save_fn, 'wb'))
 
 class ParameterReliabilityAssessor:
-    def __init__(self, args):
+    def __init__(self, args, search_results=False):
         self._args = args
-        self.params_files = glob.glob(f"{args.params_folder}*.yaml")
+        self.search_results = search_results
+        if search_results:
+            self.params_files = glob.glob(f"{args.params_folder}*.pkl")
+        else:
+            self.params_files = glob.glob(f"{args.params_folder}*.yaml")
 
     def assess_reliability(self, n_networks):
         for params_fn in self.params_files:
+
+            # check if file already exists in save directory
+            save_fn = os.path.join(self._args.save_path, os.path.basename(params_fn))
+
+            if os.path.isfile(save_fn):
+                print('File already exists. Skipping.')
+                continue
+
             rnn_params = yaml.load(open(args.rnn_params_fn), Loader=yaml.FullLoader)
             rnn_params = argparse.Namespace(**rnn_params)
-            p = yaml.load(open(params_fn), Loader=yaml.FullLoader)
+
+            if self.search_results:
+                results = pickle.load(open(params_fn, 'rb'))
+                accuracy = np.stack(results['task_accuracy'])
+                #print(accuracy.shape)
+                mean_accuracy = np.mean(accuracy[-10:, :])
+                print(f'Mean accuracy {mean_accuracy}')
+                if mean_accuracy < 0.8:
+                    print('Aborting')
+                    continue
+                p = vars(results['rnn_params'])
+            else:
+                p = yaml.load(open(params_fn), Loader=yaml.FullLoader)
             for k, v in p.items():
                 if hasattr(rnn_params, k):
                     setattr(rnn_params, k, v)
             agent = Agent(self._args, rnn_params)
-            agent.train(rnn_params, n_networks)
+            agent.train(
+                rnn_params,
+                n_networks,
+                os.path.basename(params_fn),
+                original_task_accuracy=mean_accuracy)
 
 def define_dependent_params(params, stim):
 
@@ -146,6 +178,7 @@ def define_dependent_params(params, stim):
     params.n_actions   = stim.n_output
     params.n_hidden    = params.n_exc + params.n_inh
     params.n_bottom_up = stim.n_motion_tuned
+    params.n_motion_tuned = stim.n_motion_tuned
     params.n_top_down  = stim.n_rule_tuned + stim.n_cue_tuned + stim.n_fix_tuned
 
     return params
@@ -155,15 +188,19 @@ def define_dependent_params(params, stim):
 parser = argparse.ArgumentParser('')
 parser.add_argument('--n_iterations', type=int, default=250)
 parser.add_argument('--batch_size', type=int, default=256)
-parser.add_argument('--n_stim_batches', type=int, default=20)
-parser.add_argument('--learning_rate', type=float, default=0.005)
-parser.add_argument('--n_learning_rate_ramp', type=int, default=10)
+parser.add_argument('--n_stim_batches', type=int, default=250)
+parser.add_argument('--learning_rate', type=float, default=0.02)
+parser.add_argument('--adam_epsilon', type=float, default=1e-7)
+parser.add_argument('--n_learning_rate_ramp', type=int, default=20)
 parser.add_argument('--rnn_params_fn', type=str, default='./rnn_params/base_rnn_mod.yaml')
-parser.add_argument('--params_folder', type=str, default='./rnn_params/params_to_verify/')
-parser.add_argument('--save_path', type=str, default='saved_models/temp0')
+parser.add_argument('--params_folder', type=str, default='./results/run_072821/')
+parser.add_argument('--save_path', type=str, default='results/run_072821_reliability')
 parser.add_argument('--save_frs_by_condition', type=bool, default=False)
 
 args = parser.parse_args()
+
+if not os.path.exists(args.save_path):
+    os.makedirs(args.save_path)
 
 print('Arguments:')
 for k, v in vars(args).items():
@@ -173,7 +210,5 @@ print()
 ################################################################################
 # Make ParameterReliabilityAssessor() object and test all param sets in folder
 ################################################################################
-pa = ParameterReliabilityAssessor(args)
-pa.assess_reliability(10)
-
-
+pa = ParameterReliabilityAssessor(args, search_results=True)
+pa.assess_reliability(5)

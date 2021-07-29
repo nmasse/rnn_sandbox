@@ -14,14 +14,15 @@ class BaseActor:
         self._args = args
         self._rnn_params = rnn_params
 
-    def forward_pass(self, stimulus, h, m, gate_input=False):
+    def forward_pass(self, stimulus, h, m):
 
-        gate = 0. if gate_input else 1.
         activity = []
         modulation = []
         for stim in tf.unstack(stimulus,axis=1):
-            bottom_up = gate * stim[:, :self._rnn_params.n_bottom_up]
-            top_down = stim[:, self._rnn_params.n_bottom_up:]
+            bottom_up = stim[:, :self._rnn_params.n_bottom_up]
+            top_down = stim[:, -self._rnn_params.n_top_down:]
+            if self._args.training_type=='RL':
+                top_down = tf.zeros((stim.shape[0], self._rnn_params.n_top_down), dtype=tf.float32)
             output = self.model([bottom_up, top_down, h, m], training=True)
             h = output[0]
             m = output[1]
@@ -36,9 +37,12 @@ class BaseActor:
         batch_size = stimulus.shape[0]
         h = tf.tile(h, (batch_size, 1))
         m = tf.tile(m, (batch_size, 1))
-        activity, modulation = self.forward_pass(stimulus, h, m, gate_input=True)
-        mean_activity = tf.reduce_mean(activity[:, -10:, :], axis=1)
-        mean_modulation = tf.reduce_mean(modulation[:, -10:, :], axis=1)
+        #activity, modulation = self.forward_pass(stimulus, h, m, gate_input=True)
+        activity, modulation = self.forward_pass(stimulus, h, m)
+        mean_activity = tf.reduce_mean(activity, axis=(0,1))
+        mean_modulation = tf.reduce_mean(modulation, axis=(0,1))
+        mean_activity = tf.tile(mean_activity[tf.newaxis, :], (batch_size, 1))
+        modulation = tf.tile(mean_modulation[tf.newaxis, :], (batch_size, 1))
 
         return mean_activity, mean_modulation, activity
 
@@ -61,7 +65,7 @@ class ActorSL(BaseActor):
             self.model = self.RNN.model
         else:
             self.model = tf.keras.models.load_model(saved_model_path)
-        self.opt = tf.keras.optimizers.Adam(args.learning_rate, epsilon=1e-07)
+        self.opt = tf.keras.optimizers.Adam(args.learning_rate, epsilon=self._args.adam_epsilon)
 
 
     def training_batch(self, stimulus, labels, h, m):
@@ -102,6 +106,10 @@ class ActorSL(BaseActor):
         grads_and_vars = []
         for g, v in zip(grads, self.model.trainable_variables):
             g = tf.clip_by_norm(g, 0.5)
+            #if 'top_down0' in v.name:
+            #    g * 0.1
+
+
             grads_and_vars.append((g,v))
 
         self.opt.learning_rate.assign(learning_rate)
@@ -154,9 +162,9 @@ class ActorRL(BaseActor):
             ratio, 1 - self._args.clip_ratio, 1 + self._args.clip_ratio)
         surrogate = -tf.minimum(ratio * gaes, clipped_ratio * gaes)
 
-        return tf.reduce_mean(surrogate)
+        return surrogate
 
-    def train(self, states, context, h, m, actions, gaes, td_targets, old_policy):
+    def train(self, states, context, h, m, actions, gaes, td_targets, old_policy, mask):
 
         #print('TRAIN')
         #print(actions)
@@ -180,20 +188,22 @@ class ActorRL(BaseActor):
 
             log_policy = tf.reduce_sum(actions_one_hot * tf.math.log(policy),axis=1)
             entropy = - tf.reduce_sum(policy * tf.math.log(policy), axis = 1)
-            policy_loss = self.compute_policy_loss(old_policy, log_policy, gaes)
-            entropy_loss = self._args.entropy_coeff * tf.reduce_mean(entropy)
-            value_loss = self._args.critic_coeff * 0.5 * tf.reduce_mean(tf.square(tf.stop_gradient(td_targets) - values))
-            critic_delta = tf.reduce_mean(values - td_targets)
+            surrogate = self.compute_policy_loss(old_policy, log_policy, gaes)
+            policy_loss = tf.reduce_mean(mask * surrogate)
+
+            entropy_loss = self._args.entropy_coeff * tf.reduce_mean(mask * entropy)
+            value_loss = self._args.critic_coeff * 0.5 * tf.reduce_mean(mask * tf.square(tf.stop_gradient(td_targets) - values))
+            critic_delta = tf.reduce_mean(tf.square(values - td_targets))
 
             loss = policy_loss + value_loss - entropy_loss
 
 
         grads = tape.gradient(loss, self.model.trainable_variables)
-        #grads, _ = tf.clip_by_global_norm(grads, 0.5)
+        grads, _ = tf.clip_by_global_norm(grads, 0.25)
         grads_and_vars = []
         for g,v in zip(grads, self.model.trainable_variables):
-            if 'critic' in v.name:
-                g *= 0.1
+            #if 'critic' in v.name:
+            #    g *= 0.1
             grads_and_vars.append((g, v))
 
         self.opt.apply_gradients(grads_and_vars)
@@ -239,11 +249,11 @@ class ActorContinuousRL:
             ratio, 1.0-self._args.clip_ratio, 1.0+self._args.clip_ratio)
         surrogate = -tf.minimum(ratio * gaes, clipped_ratio * gaes)
         #print('cont ratio', ratio)
-        return tf.reduce_mean(surrogate)
+        return surrogate
 
 
 
-    def train(self, states, actions, gaes, log_old_policy, std):
+    def train(self, states, actions, gaes, log_old_policy, mask, std):
 
         std = tf.cast(std, tf.float32)
         if self._args.normalize_gae_cont:
@@ -254,8 +264,8 @@ class ActorContinuousRL:
         with tf.GradientTape() as tape:
             mu = self.model(states, training=True)
             log_new_policy = self.log_pdf(mu, std, actions)
-            loss = self.compute_loss(
-                log_old_policy, log_new_policy, actions, gaes)
+            loss = tf.reduce_mean(mask * self.compute_loss(
+                log_old_policy, log_new_policy, actions, gaes))
         grads = tape.gradient(loss, self.model.trainable_variables)
         grads, _ = tf.clip_by_global_norm(grads, 0.5)
         self.opt.apply_gradients(zip(grads, self.model.trainable_variables))
