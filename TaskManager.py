@@ -7,8 +7,8 @@ import tasks.DMC
 import tasks.DMRS
 import tasks.MonkeyDMS
 import tasks.ProRetroWM
-import tasks.ProWM 
-import tasks.RetroWM 
+import tasks.ProWM
+import tasks.RetroWM
 import tensorflow as tf
 import matplotlib.pyplot as plt
 
@@ -366,7 +366,7 @@ def default_tasks():
     generic_timing = {'dead_time'   : 300,
                      'fix_time'     : 200,
                      'sample_time'  : 300,
-                     'delay_time'   : 600,
+                     'delay_time'   : 1000,
                      'test_time'    : 300}
 
 
@@ -620,7 +620,10 @@ def default_tasks():
     MonkeyDMS['timing'] = monkey_timing
 
     task_list = [DMS, DMS_distractor, DMRS90, DMC, \
-        DelayGo, ProRetroWM, ProWM, RetroWM]
+        DelayGo, ProWM, RetroWM]
+
+    print("Task timing...")
+    print(generic_timing)
 
     return task_list
 

@@ -75,7 +75,7 @@ class ActorSL(BaseActor):
 
         for stim in tf.unstack(stimulus,axis=1):
             bottom_up = stim[:, :self._rnn_params.n_bottom_up]
-            top_down = stim[:, self._rnn_params.n_bottom_up:]
+            top_down = stim[:, -self._rnn_params.n_top_down:]
             h, m, p = self.model([bottom_up, top_down, h, m], training=True)
             policy.append(p)
             activity.append(h)
@@ -181,7 +181,11 @@ class ActorRL(BaseActor):
 
         with tf.GradientTape() as tape:
 
-            _, _, policy, values = self.model([states, context, h, m], training=True)
+            _, _, policy, values = self.model([
+                                        states,
+                                        context,
+                                        tf.stop_gradient(h),
+                                        tf.stop_gradient(m)])
 
             #print(actions_one_hot.shape, policy.shape)
             #1/0
@@ -199,7 +203,7 @@ class ActorRL(BaseActor):
 
 
         grads = tape.gradient(loss, self.model.trainable_variables)
-        grads, _ = tf.clip_by_global_norm(grads, 0.25)
+        grads, _ = tf.clip_by_global_norm(grads, self._args.clip_grad_norm)
         grads_and_vars = []
         for g,v in zip(grads, self.model.trainable_variables):
             #if 'critic' in v.name:
@@ -267,6 +271,6 @@ class ActorContinuousRL:
             loss = tf.reduce_mean(mask * self.compute_loss(
                 log_old_policy, log_new_policy, actions, gaes))
         grads = tape.gradient(loss, self.model.trainable_variables)
-        grads, _ = tf.clip_by_global_norm(grads, 0.5)
+        grads, _ = tf.clip_by_global_norm(grads, self._args.clip_grad_norm)
         self.opt.apply_gradients(zip(grads, self.model.trainable_variables))
         return loss
