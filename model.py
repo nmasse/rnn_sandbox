@@ -12,9 +12,8 @@ class Model():
 
         self._args = args
         self.learning_type = learning_type
-        self.max_weight_value = 999.
+        self.max_weight_value = 2.
         self.top_down_trainable = True if learning_type=='supervised' else False
-        #self.top_down_trainable = True
         self._set_pref_dirs()
         self.model = self.create_network()
 
@@ -30,7 +29,7 @@ class Model():
         self.mask = tf.cast(self.mask, tf.float32)
 
         w_bottom_up = self.initialize_bottom_up_weights()
-        w_top_down = self.initialize_top_down_weights()
+        w_top_down0, w_top_down1 = self.initialize_top_down_weights()
         w_policy, w_critic = self.initialize_output_weights()
         w_rnn, b_rnn = self.initialize_recurrent_weights()
         w_mod = self.initialize_modulation_weights()
@@ -43,15 +42,36 @@ class Model():
         h_input = tf.keras.Input((self._args.n_hidden,)) # Previous activity
         m_input = tf.keras.Input((self._args.n_hidden,)) # Previous activity
 
+
+        if self.learning_type == 'supervised':
+
+            top_down_hidden = Linear(
+                                w_top_down0,
+                                trainable=self.top_down_trainable,
+                                name='top_down0')(y_input)
+
+            if self._args.nonlinear_top_down:
+                top_down_hidden = tf.nn.relu(top_down_hidden)
+
+            top_down_current = Linear(
+                                w_top_down1,
+                                trainable=False,
+                                name='top_down1')(top_down_hidden)
+
+        else:
+
+            print('H', w_top_down1.shape, y_input.shape)
+            top_down_current = Linear(
+                                w_top_down1,
+                                trainable=False,
+                                name='top_down1')(y_input)
+
+
         bottom_up_current = Linear(
                             w_bottom_up,
                             trainable=False,
                             name='bottom_up')(x_input)
 
-        top_down_current = Linear(
-                            w_top_down,
-                            trainable=self.top_down_trainable,
-                            name='top_down')(y_input)
 
         rec_current = Recurrent(
                         w_rnn,
@@ -71,7 +91,7 @@ class Model():
         effective_mod = 1 / (1 + tf.nn.relu(modulator))
 
         noise = tf.random.normal(tf.shape(h_input), mean=0., stddev=noise_rnn_sd)
-        soma_input = bottom_up_current + top_down_current + rec_current * effective_mod #+ noise
+        soma_input = bottom_up_current + top_down_current + rec_current * effective_mod + noise
         h = Evolve(alpha_soma, trainable=False, name='alpha_soma')((h_input, soma_input))
         h = tf.nn.relu(h)
 
@@ -106,25 +126,29 @@ class Model():
 
         self._args = new_args
         w_bottom_up = self.initialize_bottom_up_weights()
-        w_top_down = self.initialize_top_down_weights()
+
+        w_top_down0, w_top_down1 = self.initialize_top_down_weights()
         w_policy, w_critic = self.initialize_output_weights()
         w_rnn, b_rnn = self.initialize_recurrent_weights()
         w_mod = self.initialize_modulation_weights()
         alpha_soma, alpha_modulator = self.initialize_decay_time_constants()
 
         var_reset_dict = {'modulation_w:0': w_mod, 'bottom_up_w:0': w_bottom_up, \
-            'rnn_w:0': w_rnn, 'rnn_b:0': b_rnn, 'top_down_w:0': w_top_down, \
-            'policy_w:0': w_policy, 'policy_b:0': None, 'critic_w:0': w_critic, \
-            'critic_b:0': None, 'alpha_modulator:0': alpha_modulator, 'alpha_soma:0': alpha_soma}
+            'rnn_w:0': w_rnn, 'rnn_b:0': b_rnn, 'top_down0_w:0': w_top_down0, \
+            'top_down1_w:0': w_top_down1, 'policy_w:0': w_policy, 'policy_b:0': None, \
+            'critic_w:0': w_critic, 'critic_b:0': None, \
+            'alpha_modulator:0': alpha_modulator, 'alpha_soma:0': alpha_soma}
 
         for var in self.model.non_trainable_variables + self.model.trainable_variables:
+            #print(var.name)
             for key, reset_val in var_reset_dict.items():
                 if var.name == key:
-                    print(f'Resetting {var.name}')
+                    #print(f'Resetting {var.name}')
                     if reset_val is not None:
                         var.assign(reset_val)
                     else:
                         var.assign(tf.zeros_like(var))
+
 
 
     def intial_activity(self):
@@ -162,16 +186,35 @@ class Model():
 
     def initialize_top_down_weights(self):
 
-        initializer = tf.keras.initializers.GlorotNormal()
-        w = initializer(shape=(self._args.n_top_down, self._args.n_hidden))
 
-        return tf.cast(w, tf.float32)
+        initializer = tf.keras.initializers.GlorotNormal()
+        w0 = initializer(shape=(self._args.n_top_down, self._args.n_top_down_hidden))
+
+
+        We = np.random.gamma(
+                        self._args.td_E_kappa,
+                        1.,
+                        size = (self._args.n_top_down_hidden, self._args.n_exc))
+        Wi = np.random.gamma(
+                        self._args.td_I_kappa,
+                        1.,
+                        size = (self._args.n_top_down_hidden, self._args.n_inh))
+
+
+        w1 = self._args.td_weight * np.concatenate((We, Wi), axis=1)
+        w1 = np.clip(w1, 0., self.max_weight_value)
+
+        # Half the neurons won't receive top-down input
+        # The other half receive bottom-up input
+        #w1[:, 1::2] = 0.
+
+        return tf.cast(w0, tf.float32), tf.cast(w1, tf.float32)
 
     def initialize_output_weights(self):
 
         initializer = tf.keras.initializers.GlorotNormal()
-        w_policy = 0.01 * initializer(shape=(self._args.n_hidden, self._args.n_actions))
-        w_critic = 0.01 * initializer(shape=(self._args.n_hidden, 1))
+        w_policy = initializer(shape=(self._args.n_hidden, self._args.n_actions))
+        w_critic = initializer(shape=(self._args.n_hidden, 2))
 
         return tf.cast(w_policy, tf.float32), tf.cast(w_critic, tf.float32)
 
@@ -191,7 +234,7 @@ class Model():
                         1.,
                         size = (self._args.n_bottom_up, self._args.n_inh))
 
-        N = self._args.n_input - self._args.n_fix - self._args.n_rule
+        N = self._args.n_motion_tuned
 
         We[:N, :] *= von_mises(
                     self._inp_rnn_phase[:N, :self._args.n_exc],
@@ -206,7 +249,7 @@ class Model():
         W = np.clip(W, 0., self.max_weight_value)
 
         # Half the neurons won't receive input
-        W[:, ::2] = 0.
+        #W[:, ::2] = 0.
 
         return np.float32(W)
 
