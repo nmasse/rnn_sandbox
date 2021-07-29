@@ -189,6 +189,7 @@ class TaskManager:
             misc['wrong_choice_penalty']  = self.wrong_choice_penalty
             misc['n_sample']              = self.n_sample
             misc['n_test']                = self.n_test
+            misc['n_RFs']                 = self.n_RFs
             task_args = [t['name'], i, t['var_delay'], self.dt, self.tuning, t['timing'], self.shape, misc]
             self.task_list.append(task(*task_args))
 
