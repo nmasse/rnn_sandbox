@@ -14,12 +14,13 @@ class BaseActor:
         self._args = args
         self._rnn_params = rnn_params
 
-    def forward_pass(self, stimulus, h, m):
+    def forward_pass(self, stimulus, h, m, gate_input=False):
 
         activity = []
         modulation = []
+        gate = 0. if gate_input else 1.
         for stim in tf.unstack(stimulus,axis=1):
-            bottom_up = stim[:, :self._rnn_params.n_bottom_up]
+            bottom_up = gate * stim[:, :self._rnn_params.n_bottom_up]
             top_down = stim[:, -self._rnn_params.n_top_down:]
             if self._args.training_type=='RL':
                 top_down = tf.zeros((stim.shape[0], self._rnn_params.n_top_down), dtype=tf.float32)
@@ -75,7 +76,7 @@ class ActorSL(BaseActor):
 
         for stim in tf.unstack(stimulus,axis=1):
             bottom_up = stim[:, :self._rnn_params.n_bottom_up]
-            top_down = stim[:, self._rnn_params.n_bottom_up:]
+            top_down = stim[:, -self._rnn_params.n_top_down:]
             h, m, p = self.model([bottom_up, top_down, h, m], training=True)
             policy.append(p)
             activity.append(h)
@@ -181,13 +182,17 @@ class ActorRL(BaseActor):
 
         with tf.GradientTape() as tape:
 
-            _, _, policy, values = self.model([states, context, h, m], training=True)
+            _, _, policy, values = self.model([
+                                        states,
+                                        context,
+                                        tf.stop_gradient(h),
+                                        tf.stop_gradient(m)])
 
             #print(actions_one_hot.shape, policy.shape)
             #1/0
 
-            log_policy = tf.reduce_sum(actions_one_hot * tf.math.log(policy),axis=1)
-            entropy = - tf.reduce_sum(policy * tf.math.log(policy), axis = 1)
+            log_policy = tf.reduce_sum(actions_one_hot * tf.math.log(policy),axis=-1)
+            entropy = - tf.reduce_sum(policy * tf.math.log(policy), axis=-1)
             surrogate = self.compute_policy_loss(old_policy, log_policy, gaes)
             policy_loss = tf.reduce_mean(mask * surrogate)
 
@@ -199,7 +204,7 @@ class ActorRL(BaseActor):
 
 
         grads = tape.gradient(loss, self.model.trainable_variables)
-        grads, _ = tf.clip_by_global_norm(grads, 0.25)
+        grads, _ = tf.clip_by_global_norm(grads, self._args.clip_grad_norm)
         grads_and_vars = []
         for g,v in zip(grads, self.model.trainable_variables):
             #if 'critic' in v.name:
@@ -212,6 +217,39 @@ class ActorRL(BaseActor):
         return loss, critic_delta
 
 
+class OrnsteinUhlenbeckActionNoise:
+    def __init__(self, mu, sigma, theta=.15, dt=1e-2, x0=None):
+        self.theta = theta
+        self.mu = mu
+        self.sigma = sigma
+        self.dt = dt
+        self.x0 = x0
+        self.reset()
+        self.set_correction_term()
+
+    def __call__(self):
+        x = self.x_prev + self.theta * (self.mu - self.x_prev) * self.dt + self.sigma * np.sqrt(self.dt) * np.random.normal(size=self.mu.shape)
+        self.x_prev = x
+        return x
+
+    def reset(self):
+        self.x_prev = self.x0 if self.x0 is not None else np.zeros_like(self.mu)
+
+    def scroll_forward(self):
+        for _ in range(1024):
+            self.__call__()
+
+    def set_correction_term(self):
+        x = []
+        for _ in range(10000):
+            x.append(self.__call__())
+        self.OU_std = np.std(x)
+
+
+    def __repr__(self):
+        return 'OrnsteinUhlenbeckActionNoise(mu={}, sigma={})'.format(self.mu, self.sigma)
+
+
 
 class ActorContinuousRL:
     def __init__(self, args, state_dim, action_dim, action_bound):
@@ -222,9 +260,15 @@ class ActorContinuousRL:
         self.model = self.create_model()
         self.opt = tf.keras.optimizers.Adam(args.cont_learning_rate, epsilon=1e-05)
 
+        self.OU = OrnsteinUhlenbeckActionNoise(
+            np.zeros((action_dim),dtype=np.float32),
+            np.ones((action_dim),dtype=np.float32),
+            theta=self._args.OU_theta)
+
     def get_actions(self, state, std):
         mu = self.model.predict(state)
-        action = np.random.normal(mu, std)
+        noise = self.OU()
+        action = mu + std * noise / self.OU.OU_std
         action = np.clip(action, -self.action_bound, self.action_bound)
         log_policy = self.log_pdf(mu, std, action)
 
@@ -234,11 +278,19 @@ class ActorContinuousRL:
         var = std ** 2
         log_policy_pdf = -0.5 * (action - mu) ** 2 / \
             var - 0.5 * tf.math.log(var * 2 * np.pi)
-        return tf.reduce_sum(log_policy_pdf, 1, keepdims=True)
+        return tf.reduce_sum(log_policy_pdf, axis=-1, keepdims=True)
+
+    def reset_param_noise(self, noise_std):
+
+        for var in self.model.non_trainable_variables:
+            print(var.name, var.shape)
+            var.assign(np.random.normal(0, noise_std, size=var.shape).astype(np.float32))
+
 
     def create_model(self):
         state_input = tf.keras.Input((self.state_dim,))
         mu_output = Dense(self.action_dim, activation='linear', use_bias=True)(state_input)
+        #mu_noise = Dense(self.action_dim, activation='linear', use_bias=True, name='mu_noise', trainable=False)(state_input)
         #std_output = Dense(self.action_dim, activation='softplus', use_bias=False, trainable=False)(state_input) # DON'T USE THIS FOR NOW
         return tf.keras.models.Model(state_input, mu_output)
 
@@ -267,6 +319,6 @@ class ActorContinuousRL:
             loss = tf.reduce_mean(mask * self.compute_loss(
                 log_old_policy, log_new_policy, actions, gaes))
         grads = tape.gradient(loss, self.model.trainable_variables)
-        grads, _ = tf.clip_by_global_norm(grads, 0.5)
+        grads, _ = tf.clip_by_global_norm(grads, self._args.clip_grad_norm)
         self.opt.apply_gradients(zip(grads, self.model.trainable_variables))
         return loss

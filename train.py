@@ -14,7 +14,7 @@ import time
 import uuid
 
 
-gpu_idx = 3
+gpu_idx = 2
 gpus = tf.config.experimental.list_physical_devices('GPU')
 tf.config.experimental.set_visible_devices(gpus[gpu_idx], 'GPU')
 """
@@ -22,7 +22,6 @@ tf.config.experimental.set_virtual_device_configuration(
     gpus[gpu_idx],
     [tf.config.experimental.VirtualDeviceConfiguration(memory_limit=4900)])
 """
-#os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
 
 
 class Agent:
@@ -32,9 +31,10 @@ class Agent:
         self._rnn_params = rnn_params
         self._param_ranges = param_ranges
 
-        tasks = default_tasks()
+        tasks = default_tasks()[:5]
         self._args.tasks = tasks
         self.n_tasks = len(tasks)
+        print(f"Training on {self.n_tasks} tasks")
 
         alpha = rnn_params.dt / rnn_params.tc_soma
         noise_std = np.sqrt(2/alpha) * rnn_params.noise_input_sd
@@ -43,12 +43,10 @@ class Agent:
         rnn_params = define_dependent_params(rnn_params, stim)
         self.actor = ActorSL(args, rnn_params, learning_type='supervised')
 
-        #self.training_batches = [stim.generate_batch(args.batch_size, to_exclude=[self.n_tasks - 1]) for _ in range(args.n_stim_batches)]
         self.training_batches = [stim.generate_batch(args.batch_size, to_exclude=[]) for _ in range(args.n_stim_batches)]
-        #self.monkey_dms_batch = stim.generate_batch(args.batch_size, rule=self.n_tasks - 1, include_test=True)
         self.dms_batch = stim.generate_batch(args.batch_size, rule=0, include_test=True)
         self.sample_decode_time = [(300+200+300+500)//rnn_params.dt, (300+200+300+980)//rnn_params.dt]
-        self.sample_decode_time = np.arange(0,300+200+300+600+300,100)//20
+
 
         print('Trainable variables...')
         for v in self.actor.model.trainable_variables:
@@ -80,28 +78,24 @@ class Agent:
         results['steady_state_h'] = np.mean(h_init)
         print(f"Steady-state activity {results['steady_state_h']:2.4f}")
 
-        if results['steady_state_h'] < 0.02 or results['steady_state_h'] > 0.2:
+        if results['steady_state_h'] < 0.01 or results['steady_state_h'] > 1.:
+            #pickle.dump(results, open(save_fn, 'wb'))
+            print('Aborting...')
+            return False
+
+        h, _ = self.actor.forward_pass(self.dms_batch[0], copy.copy(h_init), copy.copy(m_init))
+        if np.mean(h) < 0.01 or np.mean(h) > 1.:
             #pickle.dump(results, open(save_fn, 'wb'))
             print('Aborting...')
             return False
 
         print('Determing initial sample decoding accuracy...')
-        h, _ = self.actor.forward_pass(self.dms_batch[0], copy.copy(h_init), copy.copy(m_init))
         results['sample_decoding'] = analysis.decode_signal(
                             h.numpy(),
                             np.int32(self.dms_batch[4]),
                             self.sample_decode_time)
         sd = results['sample_decoding']
-        plt.plot(sd)
-        plt.show()
         print(f"Decoding accuracy {sd[0]:1.3f}, {sd[1]:1.3f}")
-
-
-        if sd[0] < 0.75 or sd[1] < 0.5:
-            #pickle.dump(results, open(save_fn, 'wb'))
-            print('Aborting...')
-            return False
-
 
         print('Calculating average spike rates...')
         results['initial_mean_h'] = np.mean(h.numpy(), axis = (0,2))
@@ -128,6 +122,8 @@ class Agent:
                                     np.arange(self.n_tasks))
 
             print(f'Iteration {j} Loss {loss:1.4f} Accuracy {np.mean(accuracies):1.3f} Mean activity {np.mean(h):2.4f} Time {time.time()-t0:2.2f}')
+            if (j+1)%10==0:
+                print("Task accuracies " + " | ".join([f"{accuracies[i]:1.3f}" for i in range(self.n_tasks)]))
             results['task_accuracy'].append(accuracies)
             results['loss'].append(loss.numpy())
 
@@ -163,8 +159,7 @@ def define_dependent_params(params, stim):
     params.n_input   = stim.n_input
     params.n_actions = stim.n_output
     params.n_hidden = params.n_exc + params.n_inh
-    params.n_bottom_up = stim.n_motion_tuned
-    #params.n_bottom_up = stim.n_motion_tuned + stim.n_cue_tuned + stim.n_fix_tuned + stim.n_rule_tuned
+    params.n_bottom_up = stim.n_motion_tuned +stim.n_rule_tuned + stim.n_cue_tuned + stim.n_fix_tuned
     params.n_motion_tuned = stim.n_motion_tuned
     params.n_top_down = stim.n_rule_tuned + stim.n_cue_tuned + stim.n_fix_tuned
 
@@ -174,16 +169,17 @@ def define_dependent_params(params, stim):
 parser = argparse.ArgumentParser('')
 parser.add_argument('--n_iterations', type=int, default=250)
 parser.add_argument('--batch_size', type=int, default=256)
-parser.add_argument('--n_stim_batches', type=int, default=2)
+parser.add_argument('--n_stim_batches', type=int, default=250)
 parser.add_argument('--learning_rate', type=float, default=0.02)
 parser.add_argument('--adam_epsilon', type=float, default=1e-7)
 parser.add_argument('--n_learning_rate_ramp', type=int, default=20)
 parser.add_argument('--save_frs_by_condition', type=bool, default=False)
 parser.add_argument('--gamma', type=float, default=0.0)
 parser.add_argument('--lmbda', type=float, default=0.0)
-parser.add_argument('--rnn_params_fn', type=str, default='./rnn_params/base_rnn_mod.yaml')
+parser.add_argument('--training_type', type=str, default='supervised')
+parser.add_argument('--rnn_params_fn', type=str, default='./rnn_params/good_params.yaml')
 parser.add_argument('--params_range_fn', type=str, default='./rnn_params/param_ranges.yaml')
-parser.add_argument('--save_path', type=str, default='./results/run_072821_best')
+parser.add_argument('--save_path', type=str, default='./results/run_072921_5tasks')
 
 
 args = parser.parse_args()

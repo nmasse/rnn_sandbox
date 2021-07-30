@@ -132,23 +132,22 @@ class Model():
         w_rnn, b_rnn = self.initialize_recurrent_weights()
         w_mod = self.initialize_modulation_weights()
         alpha_soma, alpha_modulator = self.initialize_decay_time_constants()
+        b_pol = np.float32([1., 0., 0.])[np.newaxis, :]
 
         var_reset_dict = {'modulation_w:0': w_mod, 'bottom_up_w:0': w_bottom_up, \
             'rnn_w:0': w_rnn, 'rnn_b:0': b_rnn, 'top_down0_w:0': w_top_down0, \
-            'top_down1_w:0': w_top_down1, 'policy_w:0': w_policy, 'policy_b:0': None, \
+            'top_down1_w:0': w_top_down1, 'policy_w:0': w_policy, 'policy_b:0': b_pol, \
             'critic_w:0': w_critic, 'critic_b:0': None, \
             'alpha_modulator:0': alpha_modulator, 'alpha_soma:0': alpha_soma}
 
         for var in self.model.non_trainable_variables + self.model.trainable_variables:
-            #print(var.name)
             for key, reset_val in var_reset_dict.items():
                 if var.name == key:
-                    #print(f'Resetting {var.name}')
+                    print(f'Resetting {var.name}')
                     if reset_val is not None:
                         var.assign(reset_val)
                     else:
                         var.assign(tf.zeros_like(var))
-
 
 
     def intial_activity(self):
@@ -204,10 +203,6 @@ class Model():
         w1 = self._args.td_weight * np.concatenate((We, Wi), axis=1)
         w1 = np.clip(w1, 0., self.max_weight_value)
 
-        # Half the neurons won't receive top-down input
-        # The other half receive bottom-up input
-        #w1[:, 1::2] = 0.
-
         return tf.cast(w0, tf.float32), tf.cast(w1, tf.float32)
 
     def initialize_output_weights(self):
@@ -247,9 +242,6 @@ class Model():
 
         W = np.concatenate((We, Wi), axis=1)
         W = np.clip(W, 0., self.max_weight_value)
-
-        # Half the neurons won't receive input
-        #W[:, ::2] = 0.
 
         return np.float32(W)
 

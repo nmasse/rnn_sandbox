@@ -15,7 +15,7 @@ import time
 import uuid
 
 
-gpu_idx = 2
+gpu_idx = 1
 gpus = tf.config.experimental.list_physical_devices('GPU')
 tf.config.experimental.set_visible_devices(gpus[gpu_idx], 'GPU')
 """
@@ -31,37 +31,36 @@ class Agent:
 
         self._args = args
         self._rnn_params = rnn_params
-        self._args.gamma = [0.95, 0.99]
-        self._args.lmbda = [0., 0.95]
-        print(f"Gamma :{self._args.gamma[0]}, {self._args.gamma[1]}")
-        print(f"Lamnda :{self._args.lmbda[0]}, {self._args.lmbda[1]}")
+        self._args.gamma = [0.9, 0.95]
+        self._args.lmbda = [0., 0.9]
+        print(f"Gamma: {self._args.gamma[0]}, {self._args.gamma[1]}")
+        print(f"Lamnda: {self._args.lmbda[0]}, {self._args.lmbda[1]}")
+        print(f"Modulation time constant {self._rnn_params.tc_modulator}")
+        self._rnn_params.noise_rnn_sd = 0.01
+        print(f"Setting noise to {self._rnn_params.noise_rnn_sd}")
 
 
-        tasks = default_tasks()
+        tasks = default_tasks()[:5]
         self.n_tasks = len(tasks)
         print(f'Number of tasks {self.n_tasks}')
         stim = TaskManager(tasks, batch_size=args.batch_size, tf2=False)
-        rnn_params, cont_actor_input_dim = define_dependent_params(args, rnn_params, stim)
+        self._rnn_params, cont_actor_input_dim = define_dependent_params(args, self._rnn_params, stim)
 
         self.env = TaskGym(
                     tasks,
                     args.batch_size,
                     rnn_params.n_bottom_up,
                     cont_actor_input_dim,
-                    buffer_size=5000,
+                    buffer_size=10000,
                     new_task_prob=1.)
 
-
         self.dms_batch = stim.generate_batch(256, rule=0, include_test=True)
-        #self.sample_decode_time = [(300+200+300+200)//rnn_params.dt, (300+200+300+280)//rnn_params.dt]
-        #self.sample_decode_time = np.arange(0,300+200+300+600+300,100) // 20
-        #self.sample_decode_time = np.arange(800,1000,200)
 
-        self.actor = ActorRL(args, rnn_params)
+        self.actor = ActorRL(args, self._rnn_params)
 
         print('cont_actor_input_dim', cont_actor_input_dim)
         self.actor_cont = ActorContinuousRL(
-                                args,
+                                self._args,
                                 cont_actor_input_dim,
                                 self._args.cont_action_dim,
                                 self._args.action_bound)
@@ -72,10 +71,10 @@ class Agent:
 
         print(self.actor.model.summary())
 
-    def gae_target(self, rewards, values, last_value, done, plot_fig=False, gamma=[0.9, 0.99], lmbda=[0., 0.9]):
+    def gae_target(self, rewards, values, last_value, done, plot_fig=False):
 
-        gamma = np.reshape(gamma, (1,2))
-        lmbda = np.reshape(lmbda, (1,2))
+        gamma = np.reshape(self._args.gamma, (1,2))
+        lmbda = np.reshape(self._args.lmbda, (1,2))
 
         n_vals = values.shape[-1] # number of different time horizons to compute gae
         batch_size = values.shape[1]
@@ -89,13 +88,10 @@ class Agent:
                 nextvalues = last_value
             else:
                 nextnonterminal = 1.0 - done[k+1,:]
-                #nextvalues = values[k+1,:]
                 nextvalues = values[k+1,:, :]
 
-            #delta = rewards[k, :] + gamma * nextvalues * nextnonterminal - values[k, :]
             delta = rewards[k, :, np.newaxis] + gamma * nextvalues * nextnonterminal[:, np.newaxis] - values[k, :, :]
             gae_cumulative = gamma * lmbda * gae_cumulative * nextnonterminal[:, np.newaxis] + delta
-            #gae[k,:] = gae_cumulative
             gae[k,:, :] = gae_cumulative
         n_step_targets = gae + values
 
@@ -137,9 +133,7 @@ class Agent:
             np.stack(rewards,axis=0),
             np.stack(values, axis = 0),
             np.squeeze(next_values),
-            np.stack(dones,axis=0),
-            gamma=self._args.gamma,
-            lmbda=self._args.lmbda)
+            np.stack(dones,axis=0))
 
         activity_r = np.reshape(np.stack(activity, axis=0), (-1, h.shape[-1]))
         mod_r = np.reshape(np.stack(mod, axis=0), (-1, m.shape[-1]))
@@ -158,44 +152,7 @@ class Agent:
 
 
         self.actor.RNN.generate_new_weights(self._rnn_params)
-
-        h_init, m_init, h = self.actor.determine_steady_state(self.dms_batch[0])
-        h, _ = self.actor.forward_pass(self.dms_batch[0], copy.copy(h_init), copy.copy(m_init))
-        """
-        plt.imshow(self.dms_batch[0][0,:,:], aspect='auto')
-        plt.colorbar()
-        plt.show()
-        plt.imshow(h[0,:,:], aspect='auto')
-        plt.colorbar()
-        plt.show()
-        plt.plot(np.mean(h,axis=(0,2)))
-        plt.show()
-        print('here')
-        print(np.int32(self.dms_batch[4]))
-
-        results['sample_decoding'] = analysis.decode_signal(
-                            h.numpy(),
-                            np.int32(self.dms_batch[4]),
-                            self.sample_decode_time)
-        results['test_decoding'] = analysis.decode_signal(
-                            h.numpy(),
-                            np.int32(self.dms_batch[6]),
-                            self.sample_decode_time)
-        m = np.int32([i==j for i,j in zip(self.dms_batch[4], self.dms_batch[6])])
-        results['match_decoding'] = analysis.decode_signal(
-                            h.numpy(),
-                            m,
-                            self.sample_decode_time)
-        sd = results['sample_decoding']
-        td = results['test_decoding']
-        md = results['match_decoding']
-        plt.plot(sd,'b')
-        plt.plot(td,'r')
-        plt.plot(md,'g')
-        plt.show()
-        print(f"Decoding accuracy {sd[0]:1.3f}, {sd[1]:1.3f}")
-        """
-
+        
         time_steps =  np.zeros((self._args.batch_size), dtype=np.int32)
         n_completed_episodes = np.zeros((self.n_tasks))
         t0 = time.time()
@@ -337,6 +294,8 @@ class Agent:
             s += f" | Overal: {np.mean(running_epiosde_scores):1.3f}"
             print(s)
             t0 = time.time()
+            if ep%10==0:
+                pickle.dump(results, open(save_fn,'wb'))
 
 
 
@@ -361,24 +320,25 @@ def define_dependent_params(args, rnn_params, stim):
 
 
 parser = argparse.ArgumentParser('')
-parser.add_argument('--n_episodes', type=int, default=1000)
-parser.add_argument('--time_horizon', type=int, default=64)
-parser.add_argument('--batch_size', type=int, default=128)
+parser.add_argument('--n_episodes', type=int, default=50000)
+parser.add_argument('--time_horizon', type=int, default=128)
+parser.add_argument('--batch_size', type=int, default=256)
 parser.add_argument('--epochs', type=int, default=1)
 parser.add_argument('--n_minibatches', type=int, default=4)
 parser.add_argument('--clip_ratio', type=float, default=0.1)
 parser.add_argument('--normalize_gae', type=bool, default=False)
 parser.add_argument('--normalize_gae_cont', type=bool, default=True)
-parser.add_argument('--entropy_coeff', type=float, default=0.002)
-parser.add_argument('--critic_coeff', type=float, default=0.1)
-parser.add_argument('--learning_rate', type=float, default=3e-4)
+parser.add_argument('--entropy_coeff', type=float, default=0.001)
+parser.add_argument('--critic_coeff', type=float, default=1.)
+parser.add_argument('--learning_rate', type=float, default=1e-3)
 parser.add_argument('--cont_learning_rate', type=float, default=1e-4)
+parser.add_argument('--clip_grad_norm', type=float, default=0.5)
 parser.add_argument('--n_learning_rate_ramp', type=int, default=10)
 parser.add_argument('--save_frs_by_condition', type=bool, default=False)
 parser.add_argument('--training_type', type=str, default='RL')
 parser.add_argument('--rnn_params_fn', type=str, default='./rnn_params/good_params.yaml')
-parser.add_argument('--save_path', type=str, default='./results/test')
-parser.add_argument('--start_action_std', type=float, default=0.1)
+parser.add_argument('--save_path', type=str, default='./results/RL')
+parser.add_argument('--start_action_std', type=float, default=0.25)
 parser.add_argument('--end_action_std', type=float, default=0.001)
 parser.add_argument('--action_std_episode_anneal', type=float, default=1000)
 parser.add_argument('--action_bound', type=float, default=3)
