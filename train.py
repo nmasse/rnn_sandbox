@@ -83,8 +83,13 @@ class Agent:
             print('Aborting...')
             return False
 
-        print('Determing initial sample decoding accuracy...')
         h, _ = self.actor.forward_pass(self.dms_batch[0], copy.copy(h_init), copy.copy(m_init))
+        if np.mean(h) < 0.01 or np.mean(h) > 1.:
+            #pickle.dump(results, open(save_fn, 'wb'))
+            print('Aborting...')
+            return False
+
+        print('Determing initial sample decoding accuracy...')
         results['sample_decoding'] = analysis.decode_signal(
                             h.numpy(),
                             np.int32(self.dms_batch[4]),
