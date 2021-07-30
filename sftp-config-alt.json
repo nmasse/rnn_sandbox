@@ -14,7 +14,7 @@
     "confirm_sync": true,
     "confirm_overwrite_newer": false,
     
-    "host": "yam",
+    "host": "turnip",
     "user": "mattrosen",
     //"password": "password",
     //"port": "22",

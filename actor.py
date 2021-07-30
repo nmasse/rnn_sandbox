@@ -37,8 +37,7 @@ class BaseActor:
         batch_size = stimulus.shape[0]
         h = tf.tile(h, (batch_size, 1))
         m = tf.tile(m, (batch_size, 1))
-        #activity, modulation = self.forward_pass(stimulus, h, m, gate_input=True)
-        activity, modulation = self.forward_pass(stimulus, h, m)
+        activity, modulation = self.forward_pass(stimulus, h, m, gate_input=True)
         mean_activity = tf.reduce_mean(activity, axis=(0,1))
         mean_modulation = tf.reduce_mean(modulation, axis=(0,1))
         mean_activity = tf.tile(mean_activity[tf.newaxis, :], (batch_size, 1))
@@ -59,6 +58,7 @@ class ActorSL(BaseActor):
 
     def __init__(self, args, rnn_params, saved_model_path=None, learning_type='supervised'):
         self._args = args
+        self._args.training_type = 'supervised'
         self._rnn_params = rnn_params
         if rnn_params is not None:
             self.RNN = Model(self._rnn_params, learning_type='supervised')

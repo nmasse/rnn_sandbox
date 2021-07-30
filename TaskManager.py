@@ -619,8 +619,7 @@ def default_tasks():
     MonkeyDMS['trial_length'] = sum(monkey_timing.values())
     MonkeyDMS['timing'] = monkey_timing
 
-    task_list = [DMS, DMS_distractor, DMRS90, DMC, \
-        DelayGo, ProRetroWM, ProWM, RetroWM]
+    task_list = [DMS, DMS_distractor, DMRS180, DMC, DelayGo]
 
     return task_list
 
