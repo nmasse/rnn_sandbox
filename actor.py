@@ -32,13 +32,16 @@ class BaseActor:
 
     def determine_steady_state(self, stimulus):
 
+        t0 = self._args.steady_state_start // self._rnn_params.dt
+        t1 = self._args.steady_state_end // self._rnn_params.dt
+
         h, m = self.RNN.intial_activity()
         batch_size = stimulus.shape[0]
         h = tf.tile(h, (batch_size, 1))
         m = tf.tile(m, (batch_size, 1))
         activity, modulation = self.forward_pass(stimulus, h, m, gate_input=True)
-        mean_activity = tf.reduce_mean(activity[:,-10:,:], axis=(0,1))
-        mean_modulation = tf.reduce_mean(modulation[:,-10:,:], axis=(0,1))
+        mean_activity = tf.reduce_mean(activity[:,t0:t1,:], axis=(0,1))
+        mean_modulation = tf.reduce_mean(modulation[:,t0:t1,:], axis=(0,1))
         mean_activity = tf.tile(mean_activity[tf.newaxis, :], (batch_size, 1))
         modulation = tf.tile(mean_modulation[tf.newaxis, :], (batch_size, 1))
 

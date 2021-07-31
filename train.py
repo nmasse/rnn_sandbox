@@ -146,7 +146,10 @@ class Agent:
             print(f'Main loop iteration {i} - Full runs {full_runs}')
             params =  {k:v for k,v in vars(self._rnn_params).items()}
             for k, v in param_ranges.items():
-                new_value = np.random.uniform(v[0], v[1] + 1e-16)
+                if v[0] == v[1]:
+                    new_value = v[0]
+                else:
+                    new_value = np.random.uniform(v[0], v[1])
                 params[k] = new_value
 
             success = self.train(argparse.Namespace(**params), i)
@@ -176,6 +179,8 @@ parser.add_argument('--adam_epsilon', type=float, default=1e-7)
 parser.add_argument('--n_learning_rate_ramp', type=int, default=20)
 parser.add_argument('--save_frs_by_condition', type=bool, default=False)
 parser.add_argument('--max_h_for_output', type=float, default=999.)
+parser.add_argument('--steady_state_start', type=float, default=1300)
+parser.add_argument('--steady_state_end', type=float, default=1700)
 parser.add_argument('--training_type', type=str, default='supervised')
 parser.add_argument('--rnn_params_fn', type=str, default='./rnn_params/good_params.yaml')
 parser.add_argument('--params_range_fn', type=str, default='./rnn_params/param_ranges.yaml')

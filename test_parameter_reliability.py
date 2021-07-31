@@ -200,6 +200,9 @@ parser.add_argument('--params_folder', type=str, default='./results/run_073121_5
 parser.add_argument('--training_type', type=str, default='supervised')
 parser.add_argument('--save_path', type=str, default='results/test')
 parser.add_argument('--save_frs_by_condition', type=bool, default=False)
+parser.add_argument('--max_h_for_output', type=float, default=999.)
+parser.add_argument('--steady_state_start', type=float, default=1300)
+parser.add_argument('--steady_state_end', type=float, default=1700)
 
 args = parser.parse_args()
 
