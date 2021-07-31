@@ -14,7 +14,7 @@
     "confirm_sync": true,
     "confirm_overwrite_newer": false,
     
-    "host": "yam",
+    "host": "carrot",
     "user": "mattrosen",
     //"password": "password",
     //"port": "22",

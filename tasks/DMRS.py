@@ -38,7 +38,7 @@ class DMRS(Task.Task):
             # Set RFs
             sample_RF = np.random.choice(self.n_RFs)
             test_RF   = sample_RF if self.same_RF else np.random.choice(self.n_RFs)
-            dist_RF   = sample_RF if self.same_RF else np.random.choice(self.n_RFs)# distractor RF
+            dist_RF   = sample_RF if self.same_RF else np.random.choice(self.n_RFs) # distractor RF
 
             # Determine test/distractor direction based on whether it's a match trial or not
             matching_dir = (sample_dir + match_rotation) % self.n_motion_dirs

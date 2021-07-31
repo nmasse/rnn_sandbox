@@ -59,6 +59,7 @@ class ActorSL(BaseActor):
 
     def __init__(self, args, rnn_params, saved_model_path=None, learning_type='supervised'):
         self._args = args
+        self._args.training_type = 'supervised'
         self._rnn_params = rnn_params
         if rnn_params is not None:
             self.RNN = Model(self._rnn_params, learning_type='supervised')
