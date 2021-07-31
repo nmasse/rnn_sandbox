@@ -1,10 +1,12 @@
 import os, pickle, scipy, argparse
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib as mpl 
+mpl.use('Agg')
 
 parser = argparse.ArgumentParser('')
 parser.add_argument('data_dir', type=str)
-parser.add_argument('--base_dir', type=str, default='/home/mattrosen/rnn_param_analysis')
+parser.add_argument('--base_dir', type=str, default='/home/mattrosen/rnn_sandbox/')
 parser.add_argument('--n_stim_batches', type=int, default=2)
 parser.add_argument('--learning_rate', type=float, default=0.02)
 parser.add_argument('--adam_epsilon', type=float, default=1e-7)
@@ -14,12 +16,11 @@ parser.add_argument('--gamma', type=float, default=0.0)
 parser.add_argument('--lmbda', type=float, default=0.0)
 parser.add_argument('--rnn_params_fn', type=str, default='./rnn_params/base_rnn_mod.yaml')
 parser.add_argument('--params_range_fn', type=str, default='./rnn_params/param_ranges.yaml')
-parser.add_argument('--save_path', type=str, default='./results/run_072821_best')
-
+parser.add_argument('--save_path', type=str, default='./results/run_073021_best')
 
 args = parser.parse_args()
 
-def plot_results(data_dir, base_dir = '/home/nicolas/rnn_param_analysis'):
+def plot_results(data_dir, base_dir = args.base_dir):
     d = os.path.join(base_dir, data_dir)
     accuracy = []
     sample_decoding = []
@@ -48,5 +49,7 @@ def plot_results(data_dir, base_dir = '/home/nicolas/rnn_param_analysis'):
     ax[1].set_ylabel('Count')
     ax[1].set_title(f'Final task accuracy N={len(sample_decoding)}')
     plt.tight_layout()
-    #plt.savefig('results.jpg')
-    plt.show()
+    plt.savefig('results.jpg')
+
+if __name__ == "__main__":
+    plot_results(args.data_dir)

@@ -12,11 +12,31 @@ from TaskManager import TaskManager, default_tasks
 import yaml
 import time
 import uuid
+from datetime import date
+today = date.today()
 
 
-gpu_idx = 2
+parser = argparse.ArgumentParser('')
+parser.add_argument('gpu_idx', type=int)
+parser.add_argument('--n_iterations', type=int, default=250)
+parser.add_argument('--batch_size', type=int, default=256)
+parser.add_argument('--n_stim_batches', type=int, default=250)
+parser.add_argument('--learning_rate', type=float, default=0.02)
+parser.add_argument('--adam_epsilon', type=float, default=1e-7)
+parser.add_argument('--n_learning_rate_ramp', type=int, default=20)
+parser.add_argument('--save_frs_by_condition', type=bool, default=False)
+parser.add_argument('--gamma', type=float, default=0.0)
+parser.add_argument('--lmbda', type=float, default=0.0)
+parser.add_argument('--training_type', type=str, default='supervised')
+parser.add_argument('--rnn_params_fn', type=str, default='./rnn_params/good_params.yaml')
+parser.add_argument('--params_range_fn', type=str, default='./rnn_params/param_ranges.yaml')
+parser.add_argument('--save_path', type=str, default=f'./results/run_{today.strftime("%b-%d-%Y")}/')
+parser.add_argument('--ablation_mode', type=str, default=None)
+
+args = parser.parse_args()
+
 gpus = tf.config.experimental.list_physical_devices('GPU')
-tf.config.experimental.set_visible_devices(gpus[gpu_idx], 'GPU')
+tf.config.experimental.set_visible_devices(gpus[args.gpu_idx], 'GPU')
 """
 tf.config.experimental.set_virtual_device_configuration(
     gpus[gpu_idx],
@@ -149,6 +169,12 @@ class Agent:
                 new_value = np.random.uniform(v[0], v[1] + 1e-16)
                 params[k] = new_value
 
+            # For all parameters being ablated -- ablate
+            if self._args.ablation_mode is not None:
+                for k, v in vars(self._rnn_params).items():
+                    if self._args.ablation_mode in k and not k.startswith("tc"):
+                        params[k] = 0.
+
             success = self.train(argparse.Namespace(**params), i)
             if success:
                 full_runs += 1
@@ -166,23 +192,10 @@ def define_dependent_params(params, stim):
     return params
 
 
-parser = argparse.ArgumentParser('')
-parser.add_argument('--n_iterations', type=int, default=250)
-parser.add_argument('--batch_size', type=int, default=256)
-parser.add_argument('--n_stim_batches', type=int, default=250)
-parser.add_argument('--learning_rate', type=float, default=0.02)
-parser.add_argument('--adam_epsilon', type=float, default=1e-7)
-parser.add_argument('--n_learning_rate_ramp', type=int, default=20)
-parser.add_argument('--save_frs_by_condition', type=bool, default=False)
-parser.add_argument('--gamma', type=float, default=0.0)
-parser.add_argument('--lmbda', type=float, default=0.0)
-parser.add_argument('--training_type', type=str, default='supervised')
-parser.add_argument('--rnn_params_fn', type=str, default='./rnn_params/good_params.yaml')
-parser.add_argument('--params_range_fn', type=str, default='./rnn_params/param_ranges.yaml')
-parser.add_argument('--save_path', type=str, default='./results/run_072921_5tasks')
 
 
-args = parser.parse_args()
+
+
 
 if not os.path.exists(args.save_path):
     os.makedirs(args.save_path)
