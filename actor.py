@@ -131,6 +131,8 @@ class ActorRL(BaseActor):
             self.model = self.RNN.model
         else:
             self.model = tf.keras.models.load_model(saved_model_path)
+
+        #self.huber_loss = tf.keras.losses.Huber(delta=1.0)
         self.opt = tf.keras.optimizers.Adam(args.learning_rate, epsilon=1e-05)
 
 
@@ -159,7 +161,6 @@ class ActorRL(BaseActor):
         gaes = tf.stop_gradient(gaes)
         old_policy = tf.stop_gradient(old_policy)
         ratio = tf.math.exp(new_policy - old_policy)
-        #print('ratio', ratio)
         clipped_ratio = tf.clip_by_value(
             ratio, 1 - self._args.clip_ratio, 1 + self._args.clip_ratio)
         surrogate = -tf.minimum(ratio * gaes, clipped_ratio * gaes)
@@ -168,13 +169,8 @@ class ActorRL(BaseActor):
 
     def train(self, states, context, h, m, actions, gaes, td_targets, old_policy, mask):
 
-        #print('TRAIN')
-        #print(actions)
-        #print(actions.shape)
-
         actions = tf.squeeze(tf.cast(actions, tf.int32))
         actions_one_hot = tf.one_hot(actions, self._rnn_params.n_actions)
-
 
         if self._args.normalize_gae:
             gaes -= tf.reduce_mean(gaes)
@@ -196,48 +192,52 @@ class ActorRL(BaseActor):
 
             entropy_loss = self._args.entropy_coeff * tf.reduce_mean(mask * entropy)
             value_loss = self._args.critic_coeff * 0.5 * tf.reduce_mean(mask * tf.square(tf.stop_gradient(td_targets) - values))
-            critic_delta = tf.reduce_mean(tf.square(values - td_targets))
+            #value_loss = self._args.critic_coeff * 0.5 * self.huber_loss(tf.stop_gradient(td_targets), values, sample_weight=mask)
 
             loss = policy_loss + value_loss - entropy_loss
 
 
         grads = tape.gradient(loss, self.model.trainable_variables)
         grads, global_norm = tf.clip_by_global_norm(grads, self._args.clip_grad_norm)
-        grads_and_vars = []
-        for g,v in zip(grads, self.model.trainable_variables):
-            grads_and_vars.append((g, v))
+        if not tf.math.is_nan(global_norm):
+            self.opt.apply_gradients(zip(grads, self.model.trainable_variables))
 
-        self.opt.apply_gradients(grads_and_vars)
-
-        return loss, critic_delta, global_norm
+        return loss, value_loss, global_norm
 
 
 class OrnsteinUhlenbeckActionNoise:
-    def __init__(self, mu, sigma, theta=.15, dt=1e-2, x0=None):
+    def __init__(self, mu, sigma, theta=.15, dt=1e-2, noise_bound=3., x0=None):
         self.theta = theta
         self.mu = mu
         self.sigma = sigma
         self.dt = dt
         self.x0 = x0
+        self.noise_bound = noise_bound
         self.reset()
         self.set_correction_term()
 
-    def __call__(self):
+    def step(self):
         x = self.x_prev + self.theta * (self.mu - self.x_prev) * self.dt + self.sigma * np.sqrt(self.dt) * np.random.normal(size=self.mu.shape)
         self.x_prev = x
         return x
+
+    def get_noise(self):
+        x = self.step()
+        x = x / self.OU_std
+        return np.clip(x, -self.noise_bound, self.noise_bound)
 
     def reset(self):
         self.x_prev = self.x0 if self.x0 is not None else np.zeros_like(self.mu)
 
     def scroll_forward(self):
         for _ in range(1024):
-            self.__call__()
+            self.step()
+
 
     def set_correction_term(self):
         x = []
         for _ in range(10000):
-            x.append(self.__call__())
+            x.append(self.step())
         self.OU_std = np.std(x)
 
 
@@ -262,9 +262,8 @@ class ActorContinuousRL:
 
     def get_actions(self, state, std):
         mu = self.model.predict(state)
-        noise = self.OU()
-        noise = np.clip(noise, -self._args.OU_clip_noise, self._args.OU_clip_noise)
-        action = mu + std * noise / self.OU.OU_std
+        noise = self.OU.get_noise()
+        action = mu + std * noise
         action = np.clip(action, -self.action_bound, self.action_bound)
         log_policy = self.log_pdf(mu, std, action)
 
@@ -275,12 +274,6 @@ class ActorContinuousRL:
         log_policy_pdf = -0.5 * (action - mu) ** 2 / \
             var - 0.5 * tf.math.log(var * 2 * np.pi)
         return tf.reduce_sum(log_policy_pdf, axis=-1, keepdims=True)
-
-    def reset_param_noise(self, noise_std):
-
-        for var in self.model.non_trainable_variables:
-            print(var.name, var.shape)
-            var.assign(np.random.normal(0, noise_std, size=var.shape).astype(np.float32))
 
 
     def create_model(self):
@@ -294,9 +287,7 @@ class ActorContinuousRL:
         clipped_ratio = tf.clip_by_value(
             ratio, 1.0-self._args.clip_ratio, 1.0+self._args.clip_ratio)
         surrogate = -tf.minimum(ratio * gaes, clipped_ratio * gaes)
-        #print('cont ratio', ratio)
         return surrogate
-
 
 
     def train(self, states, actions, gaes, log_old_policy, mask, std):
@@ -314,5 +305,6 @@ class ActorContinuousRL:
                 log_old_policy, log_new_policy, actions, gaes))
         grads = tape.gradient(loss, self.model.trainable_variables)
         grads, global_norm = tf.clip_by_global_norm(grads, self._args.clip_grad_norm)
-        self.opt.apply_gradients(zip(grads, self.model.trainable_variables))
+        if not tf.math.is_nan(global_norm):
+            self.opt.apply_gradients(zip(grads, self.model.trainable_variables))
         return loss, global_norm

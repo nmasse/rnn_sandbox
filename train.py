@@ -14,7 +14,7 @@ import time
 import uuid
 
 
-gpu_idx = 2
+gpu_idx = 0
 gpus = tf.config.experimental.list_physical_devices('GPU')
 tf.config.experimental.set_visible_devices(gpus[gpu_idx], 'GPU')
 """
@@ -31,14 +31,13 @@ class Agent:
         self._rnn_params = rnn_params
         self._param_ranges = param_ranges
 
-        tasks = default_tasks()[:5]
-        self._args.tasks = tasks
-        self.n_tasks = len(tasks)
+        self.tasks = default_tasks()
+        self.n_tasks = len(self.tasks)
         print(f"Training on {self.n_tasks} tasks")
 
         alpha = rnn_params.dt / rnn_params.tc_soma
         noise_std = np.sqrt(2/alpha) * rnn_params.noise_input_sd
-        stim = TaskManager(tasks, batch_size=args.batch_size, input_noise = noise_std, tf2=False)
+        stim = TaskManager(self.tasks, batch_size=args.batch_size, input_noise = noise_std, tf2=False)
 
         rnn_params = define_dependent_params(rnn_params, stim)
         self.actor = ActorSL(args, rnn_params, learning_type='supervised')
@@ -79,13 +78,13 @@ class Agent:
         print(f"Steady-state activity {results['steady_state_h']:2.4f}")
 
         if results['steady_state_h'] < 0.01 or results['steady_state_h'] > 1.:
-            #pickle.dump(results, open(save_fn, 'wb'))
+            pickle.dump(results, open(save_fn, 'wb'))
             print('Aborting...')
             return False
 
         h, _ = self.actor.forward_pass(self.dms_batch[0], copy.copy(h_init), copy.copy(m_init))
         if np.mean(h) < 0.01 or np.mean(h) > 1.:
-            #pickle.dump(results, open(save_fn, 'wb'))
+            pickle.dump(results, open(save_fn, 'wb'))
             print('Aborting...')
             return False
 
@@ -133,6 +132,7 @@ class Agent:
             results['final_monkey_DMS_data'] = analysis.average_frs_by_condition(h.numpy(),
                 self.monkey_dms_batch[-3], self.monkey_dms_batch[-1])
 
+        results['tasks'] = self.tasks
         pickle.dump(results, open(save_fn, 'wb'))
         self.actor.reset_optimizer()
         return True
@@ -162,6 +162,7 @@ def define_dependent_params(params, stim):
     params.n_bottom_up = stim.n_motion_tuned +stim.n_rule_tuned + stim.n_cue_tuned + stim.n_fix_tuned
     params.n_motion_tuned = stim.n_motion_tuned
     params.n_top_down = stim.n_rule_tuned + stim.n_cue_tuned + stim.n_fix_tuned
+    rnn_params.max_h_for_output = args.max_h_for_output
 
     return params
 
@@ -174,12 +175,11 @@ parser.add_argument('--learning_rate', type=float, default=0.02)
 parser.add_argument('--adam_epsilon', type=float, default=1e-7)
 parser.add_argument('--n_learning_rate_ramp', type=int, default=20)
 parser.add_argument('--save_frs_by_condition', type=bool, default=False)
-parser.add_argument('--gamma', type=float, default=0.0)
-parser.add_argument('--lmbda', type=float, default=0.0)
+parser.add_argument('--max_h_for_output', type=float, default=999.)
 parser.add_argument('--training_type', type=str, default='supervised')
 parser.add_argument('--rnn_params_fn', type=str, default='./rnn_params/good_params.yaml')
 parser.add_argument('--params_range_fn', type=str, default='./rnn_params/param_ranges.yaml')
-parser.add_argument('--save_path', type=str, default='./results/run_072921_5tasks')
+parser.add_argument('--save_path', type=str, default='./results/run_073121_5tasks')
 
 
 args = parser.parse_args()
