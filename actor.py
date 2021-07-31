@@ -3,9 +3,7 @@ import numpy as np
 import os
 import model
 from tensorflow.keras.layers import Dense
-from layers import Linear
 from model import Model
-
 
 
 class BaseActor:
@@ -39,8 +37,8 @@ class BaseActor:
         h = tf.tile(h, (batch_size, 1))
         m = tf.tile(m, (batch_size, 1))
         activity, modulation = self.forward_pass(stimulus, h, m, gate_input=True)
-        mean_activity = tf.reduce_mean(activity, axis=(0,1))
-        mean_modulation = tf.reduce_mean(modulation, axis=(0,1))
+        mean_activity = tf.reduce_mean(activity[:,-10:,:], axis=(0,1))
+        mean_modulation = tf.reduce_mean(modulation[:,-10:,:], axis=(0,1))
         mean_activity = tf.tile(mean_activity[tf.newaxis, :], (batch_size, 1))
         modulation = tf.tile(mean_modulation[tf.newaxis, :], (batch_size, 1))
 
@@ -293,6 +291,8 @@ class ActorContinuousRL:
     def train(self, states, actions, gaes, log_old_policy, mask, std):
 
         std = tf.cast(std, tf.float32)
+        gaes = tf.cast(gaes, tf.float32)
+
         if self._args.normalize_gae_cont:
             gaes -= tf.reduce_mean(gaes)
             gaes /= (1e-8 + tf.math.reduce_std(gaes))
@@ -301,6 +301,8 @@ class ActorContinuousRL:
         with tf.GradientTape() as tape:
             mu = self.model(states, training=True)
             log_new_policy = self.log_pdf(mu, std, actions)
+            if mask is None:
+                mask = 1.
             loss = tf.reduce_mean(mask * self.compute_loss(
                 log_old_policy, log_new_policy, actions, gaes))
         grads = tape.gradient(loss, self.model.trainable_variables)

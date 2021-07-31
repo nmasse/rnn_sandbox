@@ -83,7 +83,7 @@ class Agent:
             return False
 
         h, _ = self.actor.forward_pass(self.dms_batch[0], copy.copy(h_init), copy.copy(m_init))
-        if np.mean(h) < 0.01 or np.mean(h) > 1.:
+        if np.mean(h) > 10.: # just make sure it's not exploding
             pickle.dump(results, open(save_fn, 'wb'))
             print('Aborting...')
             return False
@@ -179,7 +179,7 @@ parser.add_argument('--max_h_for_output', type=float, default=999.)
 parser.add_argument('--training_type', type=str, default='supervised')
 parser.add_argument('--rnn_params_fn', type=str, default='./rnn_params/good_params.yaml')
 parser.add_argument('--params_range_fn', type=str, default='./rnn_params/param_ranges.yaml')
-parser.add_argument('--save_path', type=str, default='./results/run_073121_5tasks')
+parser.add_argument('--save_path', type=str, default='./results/run_073121')
 
 
 args = parser.parse_args()

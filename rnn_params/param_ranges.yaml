@@ -66,16 +66,16 @@ II_topo:
 
 mod_EE_weight:
   - 0.
-  - 0.002
+  - 1.
 mod_EI_weight:
   - 0.
-  - 0.002
+  - 1.
 mod_IE_weight:
   - 0.
-  - 0.002
+  - 1.
 mod_II_weight:
   - 0.
-  - 0.002
+  - 1.
 
 
 EE_topo_mod:

@@ -102,7 +102,7 @@ class Model():
                     w_policy,
                     trainable=True,
                     bias=True,
-                    name='policy')(h[..., :self._args.n_exc])
+                    name='policy')(h_exc)
 
         if self.learning_type == 'RL':
 
@@ -112,7 +112,7 @@ class Model():
                         w_critic,
                         trainable=True,
                         bias=True,
-                        name='crtic')(h[..., :self._args.n_exc])
+                        name='crtic')(h_exc)
 
             return tf.keras.models.Model(
                 inputs=[x_input, y_input, h_input, m_input],
@@ -252,22 +252,35 @@ class Model():
 
     def initialize_modulation_weights(self):
 
+
+        """
+        # THIS HAS RECENTLY CHANGED!
+        beta_EE = self._args.mod_EE_weight
+        beta_EI = self._args.mod_EI_weight
+        beta_IE = self._args.mod_IE_weight
+        beta_II = self._args.mod_II_weight
+        """
+        beta_EE = self._args.mod_EE_weight / self._args.n_exc
+        beta_EI = self._args.mod_EI_weight / self._args.n_inh
+        beta_IE = self._args.mod_IE_weight / self._args.n_exc
+        beta_II = self._args.mod_II_weight / self._args.n_inh
+
         Wee = von_mises(
                     self._rnn_rnn_phase[:self._args.n_exc, :self._args.n_exc],
                     self._args.EE_topo_mod,
-                    self._args.mod_EE_weight)
+                    beta_EE)
         Wei = von_mises(
                     self._rnn_rnn_phase[self._args.n_exc:, :self._args.n_exc],
                     self._args.EI_topo_mod,
-                    self._args.mod_EI_weight)
+                    beta_EI)
         Wie = von_mises(
                     self._rnn_rnn_phase[:self._args.n_exc, self._args.n_exc:],
                     self._args.IE_topo_mod,
-                    self._args.mod_IE_weight)
+                    beta_IE)
         Wii = von_mises(
                     self._rnn_rnn_phase[self._args.n_exc:, self._args.n_exc:],
                     self._args.II_topo_mod,
-                    self._args.mod_II_weight)
+                    beta_II)
 
         We = np.hstack((Wee, Wie))
         Wi = np.hstack((Wei, Wii))
