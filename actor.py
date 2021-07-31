@@ -136,6 +136,7 @@ class ActorRL(BaseActor):
     def get_actions(self, state):
         # numpy based
         h, m, policy, values = self.model.predict(state)
+        policy += 1e-9
         actions = []
         for i in range(self._args.batch_size):
             try:
@@ -177,7 +178,7 @@ class ActorRL(BaseActor):
         if self._args.normalize_gae:
             gaes -= tf.reduce_mean(gaes)
             gaes /= (1e-8 + tf.math.reduce_std(gaes))
-            gaes = tf.clip_by_value(gaes, -5, 5.)
+            gaes = tf.clip_by_value(gaes, -3, 3.)
 
         with tf.GradientTape() as tape:
 
@@ -186,10 +187,7 @@ class ActorRL(BaseActor):
                                         context,
                                         tf.stop_gradient(h),
                                         tf.stop_gradient(m)])
-
-            #print(actions_one_hot.shape, policy.shape)
-            #1/0
-
+            policy += 1e-9
             log_policy = tf.reduce_sum(actions_one_hot * tf.math.log(policy),axis=-1)
             entropy = - tf.reduce_sum(policy * tf.math.log(policy), axis=-1)
             surrogate = self.compute_policy_loss(old_policy, log_policy, gaes)
@@ -203,17 +201,14 @@ class ActorRL(BaseActor):
 
 
         grads = tape.gradient(loss, self.model.trainable_variables)
-        grads, _ = tf.clip_by_global_norm(grads, self._args.clip_grad_norm)
+        grads, global_norm = tf.clip_by_global_norm(grads, self._args.clip_grad_norm)
         grads_and_vars = []
         for g,v in zip(grads, self.model.trainable_variables):
-            #if 'critic' in v.name:
-            #    g *= 0.1
             grads_and_vars.append((g, v))
 
         self.opt.apply_gradients(grads_and_vars)
-        #self.opt.apply_gradients(zip(grads, self.model.trainable_variables))
 
-        return loss, critic_delta
+        return loss, critic_delta, global_norm
 
 
 class OrnsteinUhlenbeckActionNoise:
@@ -267,6 +262,7 @@ class ActorContinuousRL:
     def get_actions(self, state, std):
         mu = self.model.predict(state)
         noise = self.OU()
+        noise = np.clip(noise, -self._args.OU_clip_noise, self._args.OU_clip_noise)
         action = mu + std * noise / self.OU.OU_std
         action = np.clip(action, -self.action_bound, self.action_bound)
         log_policy = self.log_pdf(mu, std, action)
@@ -289,8 +285,6 @@ class ActorContinuousRL:
     def create_model(self):
         state_input = tf.keras.Input((self.state_dim,))
         mu_output = Dense(self.action_dim, activation='linear', use_bias=True)(state_input)
-        #mu_noise = Dense(self.action_dim, activation='linear', use_bias=True, name='mu_noise', trainable=False)(state_input)
-        #std_output = Dense(self.action_dim, activation='softplus', use_bias=False, trainable=False)(state_input) # DON'T USE THIS FOR NOW
         return tf.keras.models.Model(state_input, mu_output)
 
     def compute_loss(self, log_old_policy, log_new_policy, actions, gaes):
@@ -310,7 +304,7 @@ class ActorContinuousRL:
         if self._args.normalize_gae_cont:
             gaes -= tf.reduce_mean(gaes)
             gaes /= (1e-8 + tf.math.reduce_std(gaes))
-            gaes = tf.clip_by_value(gaes, -5, 5.)
+            gaes = tf.clip_by_value(gaes, -3, 3.)
 
         with tf.GradientTape() as tape:
             mu = self.model(states, training=True)
@@ -318,6 +312,6 @@ class ActorContinuousRL:
             loss = tf.reduce_mean(mask * self.compute_loss(
                 log_old_policy, log_new_policy, actions, gaes))
         grads = tape.gradient(loss, self.model.trainable_variables)
-        grads, _ = tf.clip_by_global_norm(grads, self._args.clip_grad_norm)
+        grads, global_norm = tf.clip_by_global_norm(grads, self._args.clip_grad_norm)
         self.opt.apply_gradients(zip(grads, self.model.trainable_variables))
-        return loss
+        return loss, global_norm
