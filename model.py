@@ -238,14 +238,15 @@ class Model():
 
         We[:N, :] *= von_mises(
                     self._inp_rnn_phase[:N, :self._args.n_exc],
-                    self._args.inp_E_topo,
-                    self._args.input_weight)
+                    self._args.inp_E_topo)
         Wi[:N, :] *= von_mises(
                     self._inp_rnn_phase[:N, self._args.n_exc:],
-                    self._args.inp_I_topo,
-                    self._args.input_weight)
+                    self._args.inp_I_topo)
+
+
 
         W = np.concatenate((We, Wi), axis=1)
+        W *= self._args.input_weight
         W = np.clip(W, 0., self.max_weight_value)
 
         return np.float32(W)
@@ -253,8 +254,8 @@ class Model():
     def initialize_modulation_weights(self):
 
 
-        """
         # THIS HAS RECENTLY CHANGED!
+        """
         beta_EE = self._args.mod_EE_weight
         beta_EI = self._args.mod_EI_weight
         beta_IE = self._args.mod_IE_weight
@@ -267,23 +268,19 @@ class Model():
 
         Wee = von_mises(
                     self._rnn_rnn_phase[:self._args.n_exc, :self._args.n_exc],
-                    self._args.EE_topo_mod,
-                    beta_EE)
+                    self._args.EE_topo_mod)
         Wei = von_mises(
                     self._rnn_rnn_phase[self._args.n_exc:, :self._args.n_exc],
-                    self._args.EI_topo_mod,
-                    beta_EI)
+                    self._args.EI_topo_mod)
         Wie = von_mises(
                     self._rnn_rnn_phase[:self._args.n_exc, self._args.n_exc:],
-                    self._args.IE_topo_mod,
-                    beta_IE)
+                    self._args.IE_topo_mod)
         Wii = von_mises(
                     self._rnn_rnn_phase[self._args.n_exc:, self._args.n_exc:],
-                    self._args.II_topo_mod,
-                    beta_II)
+                    self._args.II_topo_mod)
 
-        We = np.hstack((Wee, Wie))
-        Wi = np.hstack((Wei, Wii))
+        We = np.hstack((beta_EE * Wee, beta_IE * Wie))
+        Wi = np.hstack((beta_EI * Wei, beta_II * Wii))
         W = np.vstack((We, Wi))
 
         return np.float32(W)
@@ -311,24 +308,22 @@ class Model():
         # Applying the topological modifier
         Wee *= von_mises(
                     self._rnn_rnn_phase[:self._args.n_exc, :self._args.n_exc],
-                    self._args.EE_topo,
-                    self._args.rnn_weight)
+                    self._args.EE_topo)
         Wei *= von_mises(
                     self._rnn_rnn_phase[self._args.n_exc:, :self._args.n_exc],
-                    self._args.EI_topo,
-                    self._args.rnn_weight)
+                    self._args.EI_topo)
         Wie *= von_mises(
                     self._rnn_rnn_phase[:self._args.n_exc, self._args.n_exc:],
-                    self._args.IE_topo,
-                    self._args.rnn_weight)
+                    self._args.IE_topo)
         Wii *= von_mises(
                     self._rnn_rnn_phase[self._args.n_exc:, self._args.n_exc:],
-                    self._args.II_topo,
-                    self._args.rnn_weight)
+                    self._args.II_topo)
+
 
         We = np.hstack((Wee, Wie))
         Wi = np.hstack((Wei, Wii))
         w_rnn = np.vstack((We, Wi))
+        w_rnn *= self._args.rnn_weight
 
         b_rnn = np.zeros((self._args.n_hidden), dtype = np.float32)
 
@@ -341,8 +336,7 @@ class Model():
 
 
 
-def von_mises(phase, kappa, alpha):
+def von_mises(phase, kappa):
 
     x = np.exp(kappa * phase) / np.exp(kappa)
-    x /= np.mean(x)
-    return alpha * x
+    return x / np.mean(x)

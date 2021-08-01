@@ -12,13 +12,12 @@ class BaseActor:
         self._args = args
         self._rnn_params = rnn_params
 
-    def forward_pass(self, stimulus, h, m, gate_input=False):
+    def forward_pass(self, stimulus, h, m):
 
         activity = []
         modulation = []
-        gate = 0. if gate_input else 1.
         for stim in tf.unstack(stimulus,axis=1):
-            bottom_up = gate * stim[:, :self._rnn_params.n_bottom_up]
+            bottom_up = stim[:, :self._rnn_params.n_bottom_up]
             top_down = stim[:, -self._rnn_params.n_top_down:]
             if self._args.training_type=='RL':
                 top_down = tf.zeros((stim.shape[0], self._rnn_params.n_top_down), dtype=tf.float32)
@@ -39,7 +38,7 @@ class BaseActor:
         batch_size = stimulus.shape[0]
         h = tf.tile(h, (batch_size, 1))
         m = tf.tile(m, (batch_size, 1))
-        activity, modulation = self.forward_pass(stimulus, h, m, gate_input=True)
+        activity, modulation = self.forward_pass(stimulus, h, m)
         mean_activity = tf.reduce_mean(activity[:,t0:t1,:], axis=(0,1))
         mean_modulation = tf.reduce_mean(modulation[:,t0:t1,:], axis=(0,1))
         mean_activity = tf.tile(mean_activity[tf.newaxis, :], (batch_size, 1))
