@@ -14,7 +14,10 @@ import time
 import uuid
 from datetime import date
 today = date.today()
+tf.keras.backend.set_floatx('float32')
 
+def convert(argument):
+    return list(map(int, argument.split(',')))
 
 parser = argparse.ArgumentParser('')
 parser.add_argument('gpu_idx', type=int)
@@ -25,6 +28,7 @@ parser.add_argument('--learning_rate', type=float, default=0.02)
 parser.add_argument('--adam_epsilon', type=float, default=1e-7)
 parser.add_argument('--n_learning_rate_ramp', type=int, default=20)
 parser.add_argument('--save_frs_by_condition', type=bool, default=False)
+parser.add_argument('--max_h_for_output', type=float, default=999.)
 parser.add_argument('--gamma', type=float, default=0.0)
 parser.add_argument('--lmbda', type=float, default=0.0)
 parser.add_argument('--training_type', type=str, default='supervised')
@@ -32,11 +36,14 @@ parser.add_argument('--rnn_params_fn', type=str, default='./rnn_params/good_para
 parser.add_argument('--params_range_fn', type=str, default='./rnn_params/param_ranges.yaml')
 parser.add_argument('--save_path', type=str, default=f'./results/run_{today.strftime("%b-%d-%Y")}/')
 parser.add_argument('--ablation_mode', type=str, default=None)
+parser.add_argument('--size_range', type=convert, default=[3000])
 
 args = parser.parse_args()
 
 gpus = tf.config.experimental.list_physical_devices('GPU')
+tf.config.experimental.set_memory_growth(gpus[args.gpu_idx], True)
 tf.config.experimental.set_visible_devices(gpus[args.gpu_idx], 'GPU')
+
 """
 tf.config.experimental.set_virtual_device_configuration(
     gpus[gpu_idx],
@@ -45,20 +52,23 @@ tf.config.experimental.set_virtual_device_configuration(
 
 
 class Agent:
-    def __init__(self, args, rnn_params, param_ranges):
+    def __init__(self, args, rnn_params, param_ranges, sz=3000):
 
         self._args = args
         self._rnn_params = rnn_params
         self._param_ranges = param_ranges
 
-        tasks = default_tasks()[:5]
-        self._args.tasks = tasks
-        self.n_tasks = len(tasks)
+        self.tasks = default_tasks()
+        self.n_tasks = len(self.tasks)
         print(f"Training on {self.n_tasks} tasks")
+
+        # Define E/I number based on argument
+        self._rnn_params.n_exc = int(0.8 * sz)
+        self._rnn_params.n_inh = int(0.2 * sz)
 
         alpha = rnn_params.dt / rnn_params.tc_soma
         noise_std = np.sqrt(2/alpha) * rnn_params.noise_input_sd
-        stim = TaskManager(tasks, batch_size=args.batch_size, input_noise = noise_std, tf2=False)
+        stim = TaskManager(self.tasks, batch_size=args.batch_size, input_noise = noise_std, tf2=False)
 
         rnn_params = define_dependent_params(rnn_params, stim)
         self.actor = ActorSL(args, rnn_params, learning_type='supervised')
@@ -98,14 +108,14 @@ class Agent:
         results['steady_state_h'] = np.mean(h_init)
         print(f"Steady-state activity {results['steady_state_h']:2.4f}")
 
-        if results['steady_state_h'] < 0.01 or results['steady_state_h'] > 1.:
-            #pickle.dump(results, open(save_fn, 'wb'))
+        if results['steady_state_h'] < 0.01 or results['steady_state_h'] > 1. or not np.isfinite(results['steady_state_h']):
+            pickle.dump(results, open(save_fn, 'wb'))
             print('Aborting...')
             return False
 
         h, _ = self.actor.forward_pass(self.dms_batch[0], copy.copy(h_init), copy.copy(m_init))
-        if np.mean(h) < 0.01 or np.mean(h) > 1.:
-            #pickle.dump(results, open(save_fn, 'wb'))
+        if np.mean(h) < 0.01 or np.mean(h) > 1. or not np.isfinite(np.mean(h)):
+            pickle.dump(results, open(save_fn, 'wb'))
             print('Aborting...')
             return False
 
@@ -153,6 +163,7 @@ class Agent:
             results['final_monkey_DMS_data'] = analysis.average_frs_by_condition(h.numpy(),
                 self.monkey_dms_batch[-3], self.monkey_dms_batch[-1])
 
+        results['tasks'] = self.tasks
         pickle.dump(results, open(save_fn, 'wb'))
         self.actor.reset_optimizer()
         return True
@@ -188,11 +199,9 @@ def define_dependent_params(params, stim):
     params.n_bottom_up = stim.n_motion_tuned +stim.n_rule_tuned + stim.n_cue_tuned + stim.n_fix_tuned
     params.n_motion_tuned = stim.n_motion_tuned
     params.n_top_down = stim.n_rule_tuned + stim.n_cue_tuned + stim.n_fix_tuned
+    rnn_params.max_h_for_output = args.max_h_for_output
 
     return params
-
-
-
 
 
 
@@ -209,5 +218,8 @@ rnn_params = yaml.load(open(args.rnn_params_fn), Loader=yaml.FullLoader)
 param_ranges = yaml.load(open(args.params_range_fn), Loader=yaml.FullLoader)
 
 rnn_params = argparse.Namespace(**rnn_params)
-agent = Agent(args, rnn_params, param_ranges)
-agent.main_loop()
+
+# Loop through range of sizes
+for sz in args.size_range:
+    agent = Agent(args, rnn_params, param_ranges, sz=sz)
+    agent.main_loop()

@@ -2,10 +2,11 @@ import os, pickle, scipy, argparse
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib as mpl 
+import scipy.signal
 mpl.use('Agg')
 
 parser = argparse.ArgumentParser('')
-parser.add_argument('data_dir', type=str)
+parser.add_argument('data_dir', type=str, default='./results/')
 parser.add_argument('--base_dir', type=str, default='/home/mattrosen/rnn_sandbox/')
 parser.add_argument('--n_stim_batches', type=int, default=2)
 parser.add_argument('--learning_rate', type=float, default=0.02)
@@ -38,6 +39,7 @@ def plot_results(data_dir, base_dir = args.base_dir):
     boxcar = np.ones((10,1), dtype=np.float32)/10.
     filtered_acc = scipy.signal.convolve(accuracy_all_tasks.T, boxcar, 'valid')
     sample_decoding = np.stack(sample_decoding,axis=0)[:, 1]
+    print(sample_decoding.shape, np.mean(sample_decoding))
     f,ax = plt.subplots(1,2,figsize = (10,4))
     ax[0].plot(filtered_acc)
     ax[0].grid(True)
@@ -49,7 +51,7 @@ def plot_results(data_dir, base_dir = args.base_dir):
     ax[1].set_ylabel('Count')
     ax[1].set_title(f'Final task accuracy N={len(sample_decoding)}')
     plt.tight_layout()
-    plt.savefig('results.jpg')
+    plt.savefig(f'results_{data_dir[:-1][data_dir[:-1].rfind("/")+1:]}.png', dpi=300)
 
 if __name__ == "__main__":
     plot_results(args.data_dir)

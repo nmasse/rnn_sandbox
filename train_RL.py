@@ -15,7 +15,7 @@ import time
 import uuid
 
 
-gpu_idx = 1
+gpu_idx = 3
 gpus = tf.config.experimental.list_physical_devices('GPU')
 tf.config.experimental.set_visible_devices(gpus[gpu_idx], 'GPU')
 """
@@ -23,7 +23,6 @@ tf.config.experimental.set_virtual_device_configuration(
     gpus[gpu_idx],
     [tf.config.experimental.VirtualDeviceConfiguration(memory_limit=4800)])
 """
-#os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
 
 
 class Agent:
@@ -31,16 +30,18 @@ class Agent:
 
         self._args = args
         self._rnn_params = rnn_params
-        self._args.gamma = [0.9, 0.95]
-        self._args.lmbda = [0., 0.9]
+        self._args.gamma = [0.9, 0.99]
+        self._args.lmbda = [0., 0.95]
         print(f"Gamma: {self._args.gamma[0]}, {self._args.gamma[1]}")
         print(f"Lamnda: {self._args.lmbda[0]}, {self._args.lmbda[1]}")
         print(f"Modulation time constant {self._rnn_params.tc_modulator}")
-        self._rnn_params.noise_rnn_sd = 0.01
+        self._rnn_params.noise_rnn_sd = 0.0
         print(f"Setting noise to {self._rnn_params.noise_rnn_sd}")
 
 
+
         tasks = default_tasks()[:5]
+        self._args.tasks = tasks
         self.n_tasks = len(tasks)
         print(f'Number of tasks {self.n_tasks}')
         stim = TaskManager(tasks, batch_size=args.batch_size, tf2=False)
@@ -58,7 +59,8 @@ class Agent:
 
         self.actor = ActorRL(args, self._rnn_params)
 
-        print('cont_actor_input_dim', cont_actor_input_dim)
+        print(f"cont_actor_input_dim {cont_actor_input_dim}")
+        print(f"Bottom up size {self._rnn_params.n_bottom_up}")
         self.actor_cont = ActorContinuousRL(
                                 self._args,
                                 cont_actor_input_dim,
@@ -71,7 +73,7 @@ class Agent:
 
         print(self.actor.model.summary())
 
-    def gae_target(self, rewards, values, last_value, done, plot_fig=False):
+    def gae_target(self, rewards, values, last_value, done):
 
         gamma = np.reshape(self._args.gamma, (1,2))
         lmbda = np.reshape(self._args.lmbda, (1,2))
@@ -95,50 +97,8 @@ class Agent:
             gae[k,:, :] = gae_cumulative
         n_step_targets = gae + values
 
-        if plot_fig:
-            f,ax = plt.subplots(2,2,figsize = (10,8))
-            ax[0,0].plot(rewards[:, 0],'b')
-            ax[0,0].plot(done[:, 0],'r')
-            #ax[0,0].plot(actions[:, 0],'g')
-            ax[0,1].plot(gae[:, 0,0],'b')
-            ax[0,1].plot(gae[:, 0,1],'r')
-            ax[1,0].plot(values[:, 0, 0],'b')
-            ax[1,0].plot(values[:, 0, 1],'r')
-            ax[1,1].plot(n_step_targets[:, 0, 0],'b')
-            ax[1,1].plot(n_step_targets[:, 0, 1],'r')
-            plt.show()
-
-
         return gae, n_step_targets
 
-
-    def run_loop(self, h, m, states, cont_states, rewards, dones, current_state, current_cont_action, actor_cont_std):
-
-        activity = []
-        mod = []
-        values = []
-
-        for s, cs in zip(states, cont_states):
-            _, cont_action = self.actor_cont.get_actions(cs, actor_cont_std)
-            if self._args.disable_cont_action:
-                cont_action *= 0.
-            h, m, _, action, value = self.actor.get_actions([s, cont_action, h, m])
-            values.append(value)
-            activity.append(h)
-            mod.append(m)
-
-        _, _, _, _, next_values = self.actor.get_actions([current_state, current_cont_action, h, m])
-
-        gaes, td_targets = self.gae_target(
-            np.stack(rewards,axis=0),
-            np.stack(values, axis = 0),
-            np.squeeze(next_values),
-            np.stack(dones,axis=0))
-
-        activity_r = np.reshape(np.stack(activity, axis=0), (-1, h.shape[-1]))
-        mod_r = np.reshape(np.stack(mod, axis=0), (-1, m.shape[-1]))
-
-        return activity_r, mod_r, np.reshape(gaes, (-1, gaes.shape[-1])), np.reshape(td_targets, (-1, td_targets.shape[-1]))
 
     def train(self):
 
@@ -152,7 +112,7 @@ class Agent:
 
 
         self.actor.RNN.generate_new_weights(self._rnn_params)
-        
+
         time_steps =  np.zeros((self._args.batch_size), dtype=np.int32)
         n_completed_episodes = np.zeros((self.n_tasks))
         t0 = time.time()
@@ -165,7 +125,7 @@ class Agent:
         m = 0.05*np.ones((self._args.batch_size, self._rnn_params.n_hidden), dtype = np.float32)
         running_epiosde_scores = -np.ones((self.n_tasks))
         running_epiosde_times = np.zeros((self.n_tasks))
-
+        last_mean_h = 0.
 
 
         for ep in range(self._args.n_episodes):
@@ -177,7 +137,7 @@ class Agent:
 
 
             states, actions, values , rewards, old_policies = [], [], [], [], []
-            cont_states, cont_actions, cont_values, cont_old_policies = [], [], [], []
+            cont_states, cont_actions, cont_old_policies = [], [], []
 
             activity, mod = [], []
             masks = []
@@ -186,6 +146,9 @@ class Agent:
                 dones = [np.zeros((self._args.batch_size), dtype=np.float32)]
             else:
                 dones = [dones[-1]]
+
+            self.actor_cont.OU.scroll_forward()
+
 
             for t in range(self._args.time_horizon):
                 time_steps += 1
@@ -241,6 +204,9 @@ class Agent:
                 np.squeeze(next_values),
                 np.stack(dones, axis = 0))
 
+            #gaes_normalized = (gaes-np.mean(gaes,axis=0,keepdims=True))/(1e-8+np.std(gaes,axis=0,keepdims=True))
+            #gaes_normalized = np.clip(gaes_normalized, -3., 3.)
+
 
             activity_r = np.reshape(np.stack(activity, axis=0), (-1, h.shape[-1]))
             mod_r = np.reshape(np.stack(mod, axis=0), (-1, m.shape[-1]))
@@ -251,8 +217,12 @@ class Agent:
             old_policies_r = np.reshape(np.stack(old_policies, axis=0), (-1, 1))
             cont_old_policies_r = np.reshape(np.stack(cont_old_policies, axis=0), (-1, 1))
             gaes_r = np.reshape(gaes, (-1, value.shape[-1]))
+            #gaes_normalized_r = np.reshape(gaes_normalized, (-1, value.shape[-1]))
             td_targets_r = np.reshape(td_targets, (-1, value.shape[-1]))
             masks_r = np.reshape(masks, (-1, 1))
+
+            #g0 = gaes_normalized_r[:, 0:1] if self._args.normalize_gae else gaes_normalized_r[:, 0:1]
+            #g1 = gaes_normalized_r[:, 0:1] if self._args.normalize_gae_cont else gaes_normalized_r[:, 1:2]
 
             N = states_r.shape[0]
             for epoch in range(self._args.epochs):
@@ -261,7 +231,7 @@ class Agent:
                 ind = np.split(np.reshape(ind, (self._args.n_minibatches, -1)), self._args.n_minibatches, axis=0)
                 for j in ind:
                     tt=time.time()
-                    loss, critic_delta = self.actor.train(
+                    loss, critic_loss, discrete_grad_norm = self.actor.train(
                         copy.copy(states_r[j[0], ...]),
                         cont_actions_r[j[0], :],
                         copy.copy(activity_r[j[0], ...]),
@@ -272,7 +242,7 @@ class Agent:
                         old_policies_r[j[0], :],
                         masks_r[j[0], :])
 
-                    self.actor_cont.train(
+                    loss, cont_grad_norm = self.actor_cont.train(
                         copy.copy(cont_states_r[j[0], ...]),
                         cont_actions_r[j[0], ...],
                         copy.copy(gaes_r[j[0], 1:2]),
@@ -280,16 +250,14 @@ class Agent:
                         masks_r[j[0], :],
                         actor_cont_std)
 
-                """
-                if epoch < self._args.epochs - 1:
-                    activity_r, mod_r, gaes_r, td_targets_r = self.run_loop(\
-                        copy.copy(activity[0]), copy.copy(mod[0]), states, \
-                        cont_states, rewards, dones, \
-                        state, cont_action, actor_cont_std)
-                """
-
-
-            print(f'Epiosde {ep} mean time {np.mean(running_epiosde_times):3.2f} mean h {np.mean(activity):3.3f}  time {time.time()-t0:3.2f}')
+            h_exc = np.stack(activity, axis=0)[...,:self._rnn_params.n_exc]
+            print(f'Epiosde {ep} | mean time {np.mean(running_epiosde_times):3.2f} '
+                f'| mean h {np.mean(h_exc):3.3f}  '
+                f'| max h {np.max(h_exc):3.3f}  '
+                f'| time {time.time()-t0:3.2f}  '
+                f'| discrete norm {discrete_grad_norm.numpy():3.2f}  '
+                f'| cont norm {cont_grad_norm.numpy():3.2f}  '
+                f'| critic loss {critic_loss.numpy():3.4f}')
             s = "Task scores " + " | ".join([f"{running_epiosde_scores[i]:1.3f}" for i in range(self.n_tasks)])
             s += f" | Overal: {np.mean(running_epiosde_scores):1.3f}"
             print(s)
@@ -310,9 +278,12 @@ def define_dependent_params(args, rnn_params, stim):
     rnn_params.n_bottom_up = stim.n_motion_tuned + stim.n_rule_tuned + stim.n_cue_tuned + stim.n_fix_tuned
     rnn_params.n_motion_tuned = stim.n_motion_tuned
     rnn_params.n_top_down = args.cont_action_dim
+    rnn_params.max_h_for_output = args.max_h_for_output
 
     #cont_actor_input_dim = stim.n_rule_tuned + stim.n_cue_tuned
     cont_actor_input_dim = stim.n_rule_tuned + stim.n_cue_tuned + stim.n_fix_tuned
+    rnn_params.cont_actor_input_dim = cont_actor_input_dim
+
 
     return rnn_params, cont_actor_input_dim
 
@@ -328,21 +299,23 @@ parser.add_argument('--n_minibatches', type=int, default=4)
 parser.add_argument('--clip_ratio', type=float, default=0.1)
 parser.add_argument('--normalize_gae', type=bool, default=False)
 parser.add_argument('--normalize_gae_cont', type=bool, default=True)
-parser.add_argument('--entropy_coeff', type=float, default=0.001)
+parser.add_argument('--entropy_coeff', type=float, default=0.002)
 parser.add_argument('--critic_coeff', type=float, default=1.)
-parser.add_argument('--learning_rate', type=float, default=1e-3)
-parser.add_argument('--cont_learning_rate', type=float, default=1e-4)
-parser.add_argument('--clip_grad_norm', type=float, default=0.5)
+parser.add_argument('--learning_rate', type=float, default=5e-4)
+parser.add_argument('--cont_learning_rate', type=float, default=5e-5)
+parser.add_argument('--clip_grad_norm', type=float, default=1.)
 parser.add_argument('--n_learning_rate_ramp', type=int, default=10)
 parser.add_argument('--save_frs_by_condition', type=bool, default=False)
 parser.add_argument('--training_type', type=str, default='RL')
-parser.add_argument('--rnn_params_fn', type=str, default='./rnn_params/good_params.yaml')
+parser.add_argument('--rnn_params_fn', type=str, default='./rnn_params/good_params2.yaml')
 parser.add_argument('--save_path', type=str, default='./results/RL')
-parser.add_argument('--start_action_std', type=float, default=0.25)
-parser.add_argument('--end_action_std', type=float, default=0.001)
-parser.add_argument('--action_std_episode_anneal', type=float, default=1000)
-parser.add_argument('--action_bound', type=float, default=3)
-parser.add_argument('--cont_action_dim', type=int, default=128)
+parser.add_argument('--start_action_std', type=float, default=0.1)
+parser.add_argument('--end_action_std', type=float, default=0.01)
+parser.add_argument('--OU_theta', type=float, default=0.15)
+parser.add_argument('--OU_clip_noise', type=float, default=3.)
+parser.add_argument('--max_h_for_output', type=float, default=25.)
+parser.add_argument('--action_bound', type=float, default=5)
+parser.add_argument('--cont_action_dim', type=int, default=64)
 parser.add_argument('--disable_cont_action', type=bool, default=False)
 
 

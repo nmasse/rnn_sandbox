@@ -3,7 +3,7 @@ tc_soma: 100.0
 tc_modulator: 37.27819790159073
 n_exc: 2400
 n_inh: 600
-n_top_down_hidden: 128
+n_top_down_hidden: 64
 nonlinear_top_down: False
 n_input: 73
 n_fix: 1
