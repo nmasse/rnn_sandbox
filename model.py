@@ -261,10 +261,10 @@ class Model():
         beta_IE = self._args.mod_IE_weight
         beta_II = self._args.mod_II_weight
         """
-        beta_EE = self._args.mod_EE_weight / self._args.n_exc
-        beta_EI = self._args.mod_EI_weight / self._args.n_inh
-        beta_IE = self._args.mod_IE_weight / self._args.n_exc
-        beta_II = self._args.mod_II_weight / self._args.n_inh
+        beta_EE = self._args.mod_EE_weight / self._args.n_hidden
+        beta_EI = self._args.mod_EI_weight / self._args.n_hidden
+        beta_IE = self._args.mod_IE_weight / self._args.n_hidden
+        beta_II = self._args.mod_II_weight / self._args.n_hiddenh
 
         Wee = von_mises(
                     self._rnn_rnn_phase[:self._args.n_exc, :self._args.n_exc],
