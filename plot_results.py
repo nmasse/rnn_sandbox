@@ -44,39 +44,53 @@ def plot_results(data_dir, base_dir = args.base_dir):
             task_acc = np.array(x['task_accuracy'])
             min_accuracy.append(np.amin(task_acc[-5:, :].mean(axis=0)))
             mean_accuracy.append(task_acc[-5:, :].mean())
-            mean_h.append(x['steady_state_h'])
             accuracy.append(np.stack(x['task_accuracy']))
             sample_decoding.append(x['sample_decoding'])
+        mean_h.append(x['steady_state_h'])
     accuracy = np.stack(accuracy,axis=0)
     accuracy_all_tasks = np.mean(accuracy,axis=-1)
     boxcar = np.ones((10,1), dtype=np.float32)/10.
     filtered_acc = scipy.signal.convolve(accuracy_all_tasks.T, boxcar, 'valid')
     sample_decoding = np.stack(sample_decoding,axis=0)[:, 1]
     print(sample_decoding.shape, np.mean(sample_decoding))
-    f,ax = plt.subplots(2,2,figsize = (10,4))
-    ax[0,0].plot(filtered_acc)
-    ax[0,0].grid(True)
-    ax[0,0].set_xlabel('Training batches (1 batch = 256 trials)')
-    ax[0,0].set_ylabel('Task accuracy')
-    ax[0,0].set_title(f'Accuracy during training N={len(sample_decoding)}')
-    ax[0,1].hist(filtered_acc[-1,:],20)
-    ax[0,1].set_xlabel('Final task accuracy')
-    ax[0,1].set_ylabel('Count')
-    ax[0,1].set_title(f'Final task accuracy N={len(sample_decoding)}')
-    ax[1,0].plot(np.array(initial_mean_h).T, 'b')
-    ax[1,0].plot(np.array(final_mean_h).T, 'r')
+    f,ax = plt.subplots(3,2,figsize = (10,12))
+
+    # Row 1: activity/sample decoding plots
+    ax[0,0].hist(np.log10(mean_h))
+    ax[0,0].set(xlabel="Log mean hidden activity",
+                ylabel="Count",
+                title=f"Log mean hidden activity N={len(mean_h)}")
+    ax[0,1].hist(sample_decoding)
+    ax[0,1].set(xlabel="Initial sample decoding",
+                ylabel="Count",
+                title=f"Initial sample decoding N={len(sample_decoding)}")
+
+    # Row 2: accuracy plots
+    ax[1,0].plot(filtered_acc)
     ax[1,0].grid(True)
-    ax[1,0].set_xlabel('Time (timesteps)')
-    ax[1,0].set_ylabel('Firing rate')
-    ax[1,0].set_title(f'Mean firing rates, DMS')
-    ax[1,1].scatter(mean_accuracy, min_accuracy, alpha=0.3)
-    ax[1,1].plot()
-    ax[1,1].set(xlabel='Mean accuracy across tasks',
+    ax[1,0].set_xlabel('Training batches (1 batch = 256 trials)')
+    ax[1,0].set_ylabel('Task accuracy')
+    ax[1,0].set_title(f'Accuracy during training N={len(sample_decoding)}')
+    ax[1,1].hist(filtered_acc[-1,:],20)
+    ax[1,1].set_xlabel('Final task accuracy')
+    ax[1,1].set_ylabel('Count')
+    ax[1,1].set_title(f'Final task accuracy N={len(sample_decoding)}')
+
+    # Row 3: Activity post-training, accuracy vs. 
+    ax[2,0].plot(np.array(initial_mean_h).T, 'b')
+    ax[2,0].plot(np.array(final_mean_h).T, 'r')
+    ax[2,0].grid(True)
+    ax[2,0].set_xlabel('Time (timesteps)')
+    ax[2,0].set_ylabel('Firing rate')
+    ax[2,0].set_title(f'Mean firing rates, DMS ({len(final_mean_h)} highest-accuracy networks)')
+    ax[2,1].scatter(mean_accuracy, min_accuracy, alpha=0.3)
+    ax[2,1].plot()
+    ax[2,1].set(xlabel='Mean accuracy across tasks',
                 ylabel='Min. task accuracy',
                 title=f'Min vs. mean task accuracy, N={len(sample_decoding)}',
                 xlim=[0.45, 1.0],
-                ylim=[0.25, 1.0],
-                yscale='log')
+                ylim=[0.25, 1.0])
+    
     plt.tight_layout()
     plt.savefig(f'results_{data_dir[:-1][data_dir[:-1].rfind("/")+1:]}.png', dpi=300)
 

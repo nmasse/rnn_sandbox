@@ -58,7 +58,7 @@ class Agent:
         self._rnn_params = rnn_params
         self._param_ranges = param_ranges
 
-        self.tasks = default_tasks()
+        self.tasks = default_tasks()[:5]
         self.n_tasks = len(self.tasks)
         print(f"Training on {self.n_tasks} tasks")
 
@@ -69,7 +69,11 @@ class Agent:
 
         alpha = rnn_params.dt / rnn_params.tc_soma
         noise_std = np.sqrt(2/alpha) * rnn_params.noise_input_sd
-        stim = TaskManager(self.tasks, batch_size=args.batch_size, input_noise = noise_std, tf2=False)
+        stim = TaskManager(
+            self.tasks,
+            n_motion_tuned=self._rnn_params.n_motion_tuned,
+            n_fix_tuned=self._rnn_params.n_fix_tuned,
+            batch_size=args.batch_size, input_noise = noise_std, tf2=False)
 
         rnn_params = define_dependent_params(rnn_params, stim)
         self.actor = ActorSL(args, rnn_params, learning_type='supervised')
@@ -77,7 +81,15 @@ class Agent:
         self.training_batches = [stim.generate_batch(args.batch_size, to_exclude=[]) for _ in range(args.n_stim_batches)]
         self.dms_batch = stim.generate_batch(args.batch_size, rule=0, include_test=True)
         self.sample_decode_time = [(300+200+300+500)//rnn_params.dt, (300+200+300+980)//rnn_params.dt]
-
+        """
+        plt.imshow(self.dms_batch[0][0,...], aspect='auto')
+        plt.colorbar()
+        plt.show()
+        s1 = np.sum(self.dms_batch[0][0,:,:32])
+        s2 = np.sum(self.dms_batch[0][0,:,32:33])
+        print(s1, s2)
+        1/0
+        """
 
         print('Trainable variables...')
         for v in self.actor.model.trainable_variables:
@@ -111,7 +123,7 @@ class Agent:
         results['steady_state_h'] = np.mean(h_init)
         print(f"Steady-state activity {results['steady_state_h']:2.4f}")
 
-        if results['steady_state_h'] < 0.01 or results['steady_state_h'] > 1. or not np.isfinite(results['steady_state_h']):
+        if results['steady_state_h'] < 0.01 or results['steady_state_h'] > 1:
             pickle.dump(results, open(save_fn, 'wb'))
             print('Aborting...')
             return False
@@ -129,6 +141,7 @@ class Agent:
                             self.sample_decode_time)
         sd = results['sample_decoding']
         print(f"Decoding accuracy {sd[0]:1.3f}, {sd[1]:1.3f}")
+
 
         print('Calculating average spike rates...')
         results['initial_mean_h'] = np.mean(h.numpy(), axis = (0,2))
@@ -199,16 +212,16 @@ class Agent:
 
 def define_dependent_params(params, stim):
 
-    params.n_input   = stim.n_input
     params.n_actions = stim.n_output
     params.n_hidden = params.n_exc + params.n_inh
-    params.n_bottom_up = stim.n_motion_tuned +stim.n_rule_tuned + stim.n_cue_tuned + stim.n_fix_tuned
+    params.n_bottom_up = stim.n_motion_tuned  + stim.n_fix_tuned # + stim.n_cue_tuned
     params.n_motion_tuned = stim.n_motion_tuned
+    params.n_cue_tuned = stim.n_cue_tuned
+    params.n_fix_tuned = stim.n_fix_tuned
     params.n_top_down = stim.n_rule_tuned + stim.n_cue_tuned + stim.n_fix_tuned
-    rnn_params.max_h_for_output = args.max_h_for_output
-
+    params.max_h_for_output = args.max_h_for_output
+    print(params)
     return params
-
 
 if not os.path.exists(args.save_path):
     os.makedirs(args.save_path)
