@@ -29,8 +29,8 @@ parser.add_argument('--adam_epsilon', type=float, default=1e-7)
 parser.add_argument('--n_learning_rate_ramp', type=int, default=20)
 parser.add_argument('--save_frs_by_condition', type=bool, default=False)
 parser.add_argument('--max_h_for_output', type=float, default=999.)
-parser.add_argument('--gamma', type=float, default=0.0)
-parser.add_argument('--lmbda', type=float, default=0.0)
+parser.add_argument('--steady_state_start', type=float, default=1300)
+parser.add_argument('--steady_state_end', type=float, default=1700)
 parser.add_argument('--training_type', type=str, default='supervised')
 parser.add_argument('--rnn_params_fn', type=str, default='./rnn_params/good_params.yaml')
 parser.add_argument('--params_range_fn', type=str, default='./rnn_params/param_ranges.yaml')
@@ -65,6 +65,7 @@ class Agent:
         # Define E/I number based on argument
         self._rnn_params.n_exc = int(0.8 * sz)
         self._rnn_params.n_inh = int(0.2 * sz)
+        self.sz = sz
 
         alpha = rnn_params.dt / rnn_params.tc_soma
         noise_std = np.sqrt(2/alpha) * rnn_params.noise_input_sd
@@ -91,7 +92,9 @@ class Agent:
 
     def train(self, rnn_params, counter):
 
-        save_fn = os.path.join(self._args.save_path, 'results_'+str(uuid.uuid4())+'.pkl')
+        save_fn = os.path.join(self._args.save_path, f"{self.sz}_hidden/", 'results_'+str(uuid.uuid4())+'.pkl')
+        if not os.path.exists(os.path.splitext(save_fn)[0]):
+            os.makedirs(os.path.splitext(save_fn)[0])
         results = {
             'args': self._args,
             'rnn_params': rnn_params,
@@ -114,7 +117,7 @@ class Agent:
             return False
 
         h, _ = self.actor.forward_pass(self.dms_batch[0], copy.copy(h_init), copy.copy(m_init))
-        if np.mean(h) < 0.01 or np.mean(h) > 1. or not np.isfinite(np.mean(h)):
+        if np.mean(h) > 10.: # just make sure it's not exploding
             pickle.dump(results, open(save_fn, 'wb'))
             print('Aborting...')
             return False
@@ -177,7 +180,10 @@ class Agent:
             print(f'Main loop iteration {i} - Full runs {full_runs}')
             params =  {k:v for k,v in vars(self._rnn_params).items()}
             for k, v in param_ranges.items():
-                new_value = np.random.uniform(v[0], v[1] + 1e-16)
+                if v[0] == v[1]:
+                    new_value = v[0]
+                else:
+                    new_value = np.random.uniform(v[0], v[1])
                 params[k] = new_value
 
             # For all parameters being ablated -- ablate
@@ -202,8 +208,6 @@ def define_dependent_params(params, stim):
     rnn_params.max_h_for_output = args.max_h_for_output
 
     return params
-
-
 
 
 if not os.path.exists(args.save_path):

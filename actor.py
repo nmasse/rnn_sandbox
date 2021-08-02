@@ -3,9 +3,7 @@ import numpy as np
 import os
 import model
 from tensorflow.keras.layers import Dense
-from layers import Linear
 from model import Model
-
 
 
 class BaseActor:
@@ -14,13 +12,12 @@ class BaseActor:
         self._args = args
         self._rnn_params = rnn_params
 
-    def forward_pass(self, stimulus, h, m, gate_input=False):
+    def forward_pass(self, stimulus, h, m):
 
         activity = []
         modulation = []
-        gate = 0. if gate_input else 1.
         for stim in tf.unstack(stimulus,axis=1):
-            bottom_up = gate * stim[:, :self._rnn_params.n_bottom_up]
+            bottom_up = stim[:, :self._rnn_params.n_bottom_up]
             top_down = stim[:, -self._rnn_params.n_top_down:]
             if self._args.training_type=='RL':
                 top_down = tf.zeros((stim.shape[0], self._rnn_params.n_top_down), dtype=tf.float32)
@@ -34,13 +31,16 @@ class BaseActor:
 
     def determine_steady_state(self, stimulus):
 
+        t0 = self._args.steady_state_start // self._rnn_params.dt
+        t1 = self._args.steady_state_end // self._rnn_params.dt
+
         h, m = self.RNN.intial_activity()
         batch_size = stimulus.shape[0]
         h = tf.tile(h, (batch_size, 1))
         m = tf.tile(m, (batch_size, 1))
-        activity, modulation = self.forward_pass(stimulus, h, m, gate_input=True)
-        mean_activity = tf.reduce_mean(activity, axis=(0,1))
-        mean_modulation = tf.reduce_mean(modulation, axis=(0,1))
+        activity, modulation = self.forward_pass(stimulus, h, m)
+        mean_activity = tf.reduce_mean(activity[:,t0:t1,:], axis=(0,1))
+        mean_modulation = tf.reduce_mean(modulation[:,t0:t1,:], axis=(0,1))
         mean_activity = tf.tile(mean_activity[tf.newaxis, :], (batch_size, 1))
         modulation = tf.tile(mean_modulation[tf.newaxis, :], (batch_size, 1))
 
@@ -293,6 +293,8 @@ class ActorContinuousRL:
     def train(self, states, actions, gaes, log_old_policy, mask, std):
 
         std = tf.cast(std, tf.float32)
+        gaes = tf.cast(gaes, tf.float32)
+
         if self._args.normalize_gae_cont:
             gaes -= tf.reduce_mean(gaes)
             gaes /= (1e-8 + tf.math.reduce_std(gaes))
@@ -301,6 +303,8 @@ class ActorContinuousRL:
         with tf.GradientTape() as tape:
             mu = self.model(states, training=True)
             log_new_policy = self.log_pdf(mu, std, actions)
+            if mask is None:
+                mask = 1.
             loss = tf.reduce_mean(mask * self.compute_loss(
                 log_old_policy, log_new_policy, actions, gaes))
         grads = tape.gradient(loss, self.model.trainable_variables)
