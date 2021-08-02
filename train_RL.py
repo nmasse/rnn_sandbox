@@ -15,7 +15,7 @@ import time
 import uuid
 
 
-gpu_idx = 3
+gpu_idx = 2
 gpus = tf.config.experimental.list_physical_devices('GPU')
 tf.config.experimental.set_visible_devices(gpus[gpu_idx], 'GPU')
 """
@@ -30,8 +30,8 @@ class Agent:
 
         self._args = args
         self._rnn_params = rnn_params
-        self._args.gamma = [0.9, 0.99]
-        self._args.lmbda = [0., 0.95]
+        self._args.gamma = [0.9, 0.95]
+        self._args.lmbda = [0., 0.9]
         print(f"Gamma: {self._args.gamma[0]}, {self._args.gamma[1]}")
         print(f"Lamnda: {self._args.lmbda[0]}, {self._args.lmbda[1]}")
         print(f"Modulation time constant {self._rnn_params.tc_modulator}")
@@ -44,14 +44,18 @@ class Agent:
         self._args.tasks = tasks
         self.n_tasks = len(tasks)
         print(f'Number of tasks {self.n_tasks}')
-        stim = TaskManager(tasks, batch_size=args.batch_size, tf2=False)
-        self._rnn_params, cont_actor_input_dim = define_dependent_params(args, self._rnn_params, stim)
+        stim = TaskManager(
+                tasks,
+                n_motion_tuned=rnn_params.n_motion_tuned,
+                n_fix_tuned=rnn_params.n_fix_tuned,
+                batch_size=args.batch_size, tf2=False)
+
+        self._rnn_params = define_dependent_params(args, self._rnn_params, stim)
 
         self.env = TaskGym(
                     tasks,
                     args.batch_size,
-                    rnn_params.n_bottom_up,
-                    cont_actor_input_dim,
+                    rnn_params,
                     buffer_size=10000,
                     new_task_prob=1.)
 
@@ -59,11 +63,11 @@ class Agent:
 
         self.actor = ActorRL(args, self._rnn_params)
 
-        print(f"cont_actor_input_dim {cont_actor_input_dim}")
+        print(f"cont_actor_input_dim {self._rnn_params.cont_actor_input_dim}")
         print(f"Bottom up size {self._rnn_params.n_bottom_up}")
         self.actor_cont = ActorContinuousRL(
                                 self._args,
-                                cont_actor_input_dim,
+                                self._rnn_params.cont_actor_input_dim,
                                 self._args.cont_action_dim,
                                 self._args.action_bound)
 
@@ -156,7 +160,6 @@ class Agent:
                 current_task_id = self.env.task_id
 
                 cont_log_policy, cont_action = self.actor_cont.get_actions(cont_state, actor_cont_std)
-
                 next_h, next_m, log_policy, action, value = self.actor.get_actions([state, cont_action, h, m])
                 next_state, next_cont_state, next_mask, reward, done = self.env.step_all(action)
                 episode_reward += reward
@@ -204,10 +207,6 @@ class Agent:
                 np.squeeze(next_values),
                 np.stack(dones, axis = 0))
 
-            #gaes_normalized = (gaes-np.mean(gaes,axis=0,keepdims=True))/(1e-8+np.std(gaes,axis=0,keepdims=True))
-            #gaes_normalized = np.clip(gaes_normalized, -3., 3.)
-
-
             activity_r = np.reshape(np.stack(activity, axis=0), (-1, h.shape[-1]))
             mod_r = np.reshape(np.stack(mod, axis=0), (-1, m.shape[-1]))
             states_r = np.reshape(np.stack(states, axis=0), (-1, state.shape[-1]))
@@ -220,9 +219,6 @@ class Agent:
             #gaes_normalized_r = np.reshape(gaes_normalized, (-1, value.shape[-1]))
             td_targets_r = np.reshape(td_targets, (-1, value.shape[-1]))
             masks_r = np.reshape(masks, (-1, 1))
-
-            #g0 = gaes_normalized_r[:, 0:1] if self._args.normalize_gae else gaes_normalized_r[:, 0:1]
-            #g1 = gaes_normalized_r[:, 0:1] if self._args.normalize_gae_cont else gaes_normalized_r[:, 1:2]
 
             N = states_r.shape[0]
             for epoch in range(self._args.epochs):
@@ -242,13 +238,15 @@ class Agent:
                         old_policies_r[j[0], :],
                         masks_r[j[0], :])
 
-                    loss, cont_grad_norm = self.actor_cont.train(
-                        copy.copy(cont_states_r[j[0], ...]),
-                        cont_actions_r[j[0], ...],
-                        copy.copy(gaes_r[j[0], 1:2]),
-                        cont_old_policies_r[j[0], ...],
-                        masks_r[j[0], :],
-                        actor_cont_std)
+                    if epoch == 0:
+                        loss, cont_grad_norm = self.actor_cont.train(
+                            copy.copy(cont_states_r[j[0], ...]),
+                            cont_actions_r[j[0], ...],
+                            copy.copy(gaes_r[j[0], 1:2]),
+                            cont_old_policies_r[j[0], ...],
+                            masks_r[j[0], :],
+                            actor_cont_std)
+
 
             h_exc = np.stack(activity, axis=0)[...,:self._rnn_params.n_exc]
             print(f'Epiosde {ep} | mean time {np.mean(running_epiosde_times):3.2f} '
@@ -271,21 +269,19 @@ class Agent:
 
 def define_dependent_params(args, rnn_params, stim):
 
-    rnn_params.n_input   = stim.n_input
     rnn_params.n_actions = stim.n_output
     rnn_params.n_hidden = rnn_params.n_exc + rnn_params.n_inh
     #rnn_params.n_bottom_up = stim.n_motion_tuned + stim.n_fix_tuned
-    rnn_params.n_bottom_up = stim.n_motion_tuned + stim.n_rule_tuned + stim.n_cue_tuned + stim.n_fix_tuned
-    rnn_params.n_motion_tuned = stim.n_motion_tuned
+    rnn_params.n_bottom_up = stim.n_motion_tuned + stim.n_fix_tuned
     rnn_params.n_top_down = args.cont_action_dim
+    rnn_params.n_cue_tuned = stim.n_cue_tuned
+    rnn_params.n_fix_tuned = stim.n_fix_tuned
     rnn_params.max_h_for_output = args.max_h_for_output
-
-    #cont_actor_input_dim = stim.n_rule_tuned + stim.n_cue_tuned
-    cont_actor_input_dim = stim.n_rule_tuned + stim.n_cue_tuned + stim.n_fix_tuned
-    rnn_params.cont_actor_input_dim = cont_actor_input_dim
+    rnn_params.cont_actor_input_dim = stim.n_rule_tuned + stim.n_fix_tuned
 
 
-    return rnn_params, cont_actor_input_dim
+
+    return rnn_params
 
 
 
@@ -294,7 +290,7 @@ parser = argparse.ArgumentParser('')
 parser.add_argument('--n_episodes', type=int, default=50000)
 parser.add_argument('--time_horizon', type=int, default=128)
 parser.add_argument('--batch_size', type=int, default=256)
-parser.add_argument('--epochs', type=int, default=1)
+parser.add_argument('--epochs', type=int, default=3)
 parser.add_argument('--n_minibatches', type=int, default=4)
 parser.add_argument('--clip_ratio', type=float, default=0.1)
 parser.add_argument('--normalize_gae', type=bool, default=False)
@@ -302,16 +298,17 @@ parser.add_argument('--normalize_gae_cont', type=bool, default=True)
 parser.add_argument('--entropy_coeff', type=float, default=0.002)
 parser.add_argument('--critic_coeff', type=float, default=1.)
 parser.add_argument('--learning_rate', type=float, default=5e-4)
-parser.add_argument('--cont_learning_rate', type=float, default=5e-5)
+parser.add_argument('--cont_learning_rate', type=float, default=2e-5)
 parser.add_argument('--clip_grad_norm', type=float, default=1.)
 parser.add_argument('--n_learning_rate_ramp', type=int, default=10)
 parser.add_argument('--save_frs_by_condition', type=bool, default=False)
 parser.add_argument('--training_type', type=str, default='RL')
-parser.add_argument('--rnn_params_fn', type=str, default='./rnn_params/good_params2.yaml')
+parser.add_argument('--rnn_params_fn', type=str, default='./rnn_params/rl_params5.yaml')
 parser.add_argument('--save_path', type=str, default='./results/RL')
 parser.add_argument('--start_action_std', type=float, default=0.1)
-parser.add_argument('--end_action_std', type=float, default=0.01)
-parser.add_argument('--OU_theta', type=float, default=0.15)
+parser.add_argument('--end_action_std', type=float, default=0.05)
+parser.add_argument('--OU_noise', type=bool, default=False)
+parser.add_argument('--OU_theta', type=float, default=0.3)
 parser.add_argument('--OU_clip_noise', type=float, default=3.)
 parser.add_argument('--max_h_for_output', type=float, default=25.)
 parser.add_argument('--action_bound', type=float, default=5)

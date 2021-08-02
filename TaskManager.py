@@ -15,16 +15,21 @@ import matplotlib.pyplot as plt
 
 class TaskGym(gym.Env):
 
-    def __init__(self, task_list, batch_size, n_bottom_up, n_top_down, buffer_size=1000, new_task_prob=1.):
+    def __init__(self, task_list, batch_size, rnn_params, buffer_size=1000, new_task_prob=1.):
 
         self.n_tasks = len(task_list)
         self.new_task_prob = new_task_prob
         self.batch_size = batch_size
         self.buffer_size = buffer_size
 
-        self.task_manager = TaskManager(task_list, buffer_size)
-        self.n_bottom_up = n_bottom_up
-        self.n_top_down = n_top_down
+        self.task_manager = TaskManager(
+                            task_list,
+                            buffer_size,
+                            n_motion_tuned=rnn_params.n_motion_tuned,
+                            n_fix_tuned=rnn_params.n_fix_tuned)
+        self.n_bottom_up = rnn_params.n_bottom_up
+        self.n_top_down = rnn_params.cont_actor_input_dim
+        self.non_motion_mult = self.task_manager.non_motion_mult
         self.trials_per_task = [self.task_manager.generate_batch(buffer_size, rule=n) for n in range(self.n_tasks)]
         self.task_id = np.random.choice(self.n_tasks, size = (batch_size))
         self.trial_id = np.random.choice(buffer_size, size = (batch_size))
@@ -35,7 +40,7 @@ class TaskGym(gym.Env):
         # split neural input into bottom-up (motion direction activity) for RNN
         # and top-down (context/rule) for Cont Actor RL
         bottom_up = observation[:, :self.n_bottom_up]
-        top_down = observation[:, -self.n_top_down:]
+        top_down = observation[:, -self.n_top_down:] / self.non_motion_mult
         return bottom_up, top_down
 
 
@@ -102,9 +107,6 @@ class TaskGym(gym.Env):
             observation = self.trials_per_task[task][0][trial, time, :]
             mask = self.trials_per_task[task][2][trial, time]
 
-        #if agent_id == 0:
-        #    print(self.task_id[agent_id], self.trial_id[agent_id], self.time[agent_id], action, reward, done)
-
         return observation, mask, reward, done
 
 
@@ -117,6 +119,7 @@ class TaskManager:
                  n_fix_tuned = 1,
                  tuning_height = 2,
                  kappa = 2,
+                 non_motion_mult = 2.,
                  dt = 20,
                  input_mean = 0,
                  input_noise = 0.0,
@@ -137,6 +140,7 @@ class TaskManager:
         self.n_fix_tuned     = n_fix_tuned
         self.tuning_height   = tuning_height
         self.kappa           = kappa
+        self.non_motion_mult = non_motion_mult
         self.dt              = dt
         self.input_mean      = input_mean
         self.input_noise     = input_noise
@@ -336,18 +340,18 @@ class TaskManager:
         ###
         # Generate fixation tuning
         for n in range(self.n_fix_tuned):
-            fix_tuning[self.n_motion_tuned + n, n] = self.tuning_height
+            fix_tuning[self.n_motion_tuned + n, 0] = self.non_motion_mult * self.tuning_height
 
         ###
         # Generate rule tuning
         for n in range(self.n_rule_tuned):
-            rule_tuning[self.n_motion_tuned+self.n_fix_tuned+n,n] = self.tuning_height
+            rule_tuning[self.n_motion_tuned+self.n_fix_tuned+n,n] = self.non_motion_mult * self.tuning_height
 
         ###
         # Generate cue tuning
         for n in range(self.n_cue_tuned):
             start = self.n_motion_tuned + self.n_fix_tuned + self.n_rule_tuned
-            cue_tuning[start + n, n] = self.tuning_height
+            cue_tuning[start + n, n] = self.non_motion_mult * self.tuning_height
 
         # Package together into a dictionary and return
         tuning = {'motion': motion_tuning,
@@ -497,7 +501,7 @@ def default_tasks():
     DelayGo = {}
     DelayGo['name'] = 'DelayGo'
     DelayGo['n_motion_dirs'] = 6
-    DelayGo['n_cues'] = 1
+    DelayGo['n_cues'] = 0
     DelayGo['n_RFs'] = 1
     DelayGo['var_delay'] = False
     DelayGo['categorization'] = True
@@ -512,7 +516,7 @@ def default_tasks():
     ABBA = {}
     ABBA['name'] = 'ABBA'
     ABBA['n_motion_dirs'] = 6
-    ABBA['n_cues'] = 1
+    ABBA['n_cues'] = 0
     ABBA['n_RFs'] = 1
     ABBA['var_delay'] = False
     ABBA['n_output'] = 3
@@ -533,7 +537,7 @@ def default_tasks():
     ABCA = {}
     ABCA['name'] = 'ABCA'
     ABCA['n_motion_dirs'] = 6
-    ABCA['n_cues'] = 1
+    ABCA['n_cues'] = 0
     ABCA['n_RFs'] = 1
     ABCA['var_delay'] = False
     ABCA['n_output'] = 3

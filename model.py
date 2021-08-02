@@ -94,7 +94,8 @@ class Model():
         soma_input = bottom_up_current + top_down_current + rec_current * effective_mod + noise
         h = Evolve(alpha_soma, trainable=False, name='alpha_soma')((h_input, soma_input))
         h = tf.nn.relu(h)
-        h_exc = h[..., :self._args.n_exc]
+        #h_exc = h[..., :self._args.n_exc]
+        h_exc = h[..., :]
         if self.learning_type == 'RL':
             h_exc = tf.clip_by_value(h_exc, 0., self._args.max_h_for_output)
 
@@ -205,16 +206,17 @@ class Model():
 
         w1 = self._args.td_weight * np.concatenate((We, Wi), axis=1)
         w1 = np.clip(w1, 0., self.max_weight_value)
+        w1[:, 1::2] = 0.
 
         return tf.cast(w0, tf.float32), tf.cast(w1, tf.float32)
 
     def initialize_output_weights(self):
 
         initializer = tf.keras.initializers.GlorotNormal()
-        #w_policy = initializer(shape=(self._args.n_hidden, self._args.n_actions))
-        #w_critic = initializer(shape=(self._args.n_hidden, 2))
-        w_policy = initializer(shape=(self._args.n_exc, self._args.n_actions))
-        w_critic = initializer(shape=(self._args.n_exc, 2))
+        w_policy = initializer(shape=(self._args.n_hidden, self._args.n_actions))
+        w_critic = initializer(shape=(self._args.n_hidden, 2))
+        #w_policy = initializer(shape=(self._args.n_exc, self._args.n_actions))
+        #w_critic = initializer(shape=(self._args.n_exc, 2))
 
         return tf.cast(w_policy, tf.float32), tf.cast(w_critic, tf.float32)
 
@@ -248,6 +250,7 @@ class Model():
         W = np.concatenate((We, Wi), axis=1)
         W *= self._args.input_weight
         W = np.clip(W, 0., self.max_weight_value)
+        W[:, ::2] = 0.
 
         return np.float32(W)
 
@@ -264,7 +267,7 @@ class Model():
         beta_EE = self._args.mod_EE_weight / self._args.n_hidden
         beta_EI = self._args.mod_EI_weight / self._args.n_hidden
         beta_IE = self._args.mod_IE_weight / self._args.n_hidden
-        beta_II = self._args.mod_II_weight / self._args.n_hiddenh
+        beta_II = self._args.mod_II_weight / self._args.n_hidden
 
         Wee = von_mises(
                     self._rnn_rnn_phase[:self._args.n_exc, :self._args.n_exc],

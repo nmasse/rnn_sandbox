@@ -1,7 +1,7 @@
 import tensorflow as tf
 import numpy as np
 import os
-import model
+#import model
 from tensorflow.keras.layers import Dense
 from model import Model
 
@@ -262,7 +262,11 @@ class ActorContinuousRL:
 
     def get_actions(self, state, std):
         mu = self.model.predict(state)
-        noise = self.OU.get_noise()
+        if self._args.OU_noise:
+            noise = self.OU.get_noise()
+        else:
+            noise = np.random.normal(0., 1., mu.shape)
+            noise = np.clip(noise, -3., 3.)
         action = mu + std * noise
         action = np.clip(action, -self.action_bound, self.action_bound)
         log_policy = self.log_pdf(mu, std, action)

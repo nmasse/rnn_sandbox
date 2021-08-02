@@ -58,7 +58,7 @@ class DelayGo(Task.Task):
             sample_input = np.reshape(self.motion_tuning[:, sample_RF, sample_dir],(1,-1))
             fix_input    = int(self.n_fix_tuned > 0) * np.reshape(self.fix_tuning[:,0],(1,-1))
             rule_input   = int(self.n_rule_tuned > 0) * np.reshape(self.rule_tuning[:,self.rule_id],(1,-1))
-            cue_input    = int(self.n_cue_tuned > 0) * np.reshape(self.cue_tuning[:,0],(1,-1))
+            #cue_input    = int(self.n_cue_tuned > 0) * np.reshape(self.cue_tuning[:,0],(1,-1))
             trial_info['neural_input'][i, range(*sample_bounds), :] += sample_input
             trial_info['neural_input'][i, range(0, test_bounds[0]), :] += fix_input
             trial_info['neural_input'][i, range(*rule_bounds), :]   += rule_input
