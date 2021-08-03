@@ -3,11 +3,12 @@ from tasks import Task
 
 class DMC(Task.Task):
 
-    def __init__(self, task_name, rule_id, var_delay, dt, tuning, timing, shape, misc, same_RF=True):
+    def __init__(self, task_name, rule_id, var_delay, dt, tuning, timing, shape, misc, possible_RFs = [0], same_RF=True):
 
         # Initialize from superclass Task
         super().__init__(task_name, rule_id, var_delay, dt, tuning, timing, shape, misc)
-        self.same_RF = same_RF
+        self.same_RF  = same_RF
+        self.possible_RFs = possible_RFs if possible_RFs is not None else list(range(self.n_motion_dirs))
 
     def _get_trial_info(self, batch_size):
         return super()._get_trial_info(batch_size)
@@ -28,7 +29,7 @@ class DMC(Task.Task):
             catch      = np.random.rand() < self.catch_trial_pct
 
             # Set RFs
-            sample_RF = np.random.choice(self.n_RFs)
+            sample_RF = np.random.choice(self.possible_RFs)
             test_RF   = sample_RF if self.same_RF else np.random.choice(self.n_RFs)
 
             # Determine test direction based on whether it's a match trial or not
