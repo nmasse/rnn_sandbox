@@ -17,7 +17,7 @@ import time
 
 
 
-gpu_idx = 2
+gpu_idx = 1
 gpus = tf.config.experimental.list_physical_devices('GPU')
 tf.config.experimental.set_visible_devices(gpus[gpu_idx], 'GPU')
 
@@ -29,7 +29,7 @@ parser.add_argument('--max_episodes', type=int, default=50000)
 parser.add_argument('--atari_env', type=bool, default=True)
 parser.add_argument('--gamma', type=float, default=0.99)
 parser.add_argument('--learning_rate', type=float, default=2.5e-4)
-parser.add_argument('--cont_learning_rate', type=float, default=2.5e-5)
+parser.add_argument('--cont_learning_rate', type=float, default=5e-5)
 parser.add_argument('--clip_ratio', type=float, default=0.1)
 parser.add_argument('--cont_clip_ratio', type=float, default=0.1)
 parser.add_argument('--clip_grad_norm', type=float, default=1.)
@@ -48,13 +48,14 @@ parser.add_argument('--binarize_states', type=bool, default=True)
 parser.add_argument('--binary_threshold', default = [35])
 parser.add_argument('--hidden_dims', type=int, default=[1024, 1024, 1024, 1024, 1024, 1024])
 parser.add_argument('--cont_action_dim', type=int, default=1024)
-parser.add_argument('--history_save_fn', type=str, default='results/space_invaders_073121.pkl')
+parser.add_argument('--history_save_fn', type=str, default='results/space_invaders_080221.pkl')
 
 parser.add_argument('--start_action_std', type=float, default=0.1)
-parser.add_argument('--end_action_std', type=float, default=0.01)
-parser.add_argument('--OU_theta', type=float, default=0.15)
+parser.add_argument('--end_action_std', type=float, default=0.05)
+parser.add_argument('--OU_noise', type=bool, default=False)
+parser.add_argument('--OU_theta', type=float, default=0.1)
 parser.add_argument('--OU_clip_noise', type=float, default=3.)
-parser.add_argument('--action_std_episode_anneal', type=float, default=5000)
+parser.add_argument('--action_std_episode_anneal', type=float, default=10000)
 parser.add_argument('--cont_action_gain', type=float, default=1.)
 parser.add_argument('--initialization', type=str, default='Ortho')
 parser.add_argument('--disable_continuous_action', type=bool, default=False)
@@ -87,7 +88,7 @@ class ActorDiscrete:
         init0 = tf.keras.initializers.Orthogonal(gain=np.sqrt(1.))
 
         h = z_mean
-        for i in range(6):
+        for i in range(len(self._args.hidden_dims)):
 
             c = Dense(
                 self._args.hidden_dims[i],
@@ -196,8 +197,8 @@ class Agent:
         self.action_dim = [env.action_space.n for env in self.env.envs]
         self.max_action_dim = np.max(self.action_dim)
 
-        self._args.gamma = [0.99, 0.995]
-        self._args.lmbda = [0.95, 0.975]
+        self._args.gamma = [0.99, 0.99]
+        self._args.lmbda = [0.95, 0.95]
         print(f"Gamma: {self._args.gamma[0]}, {self._args.gamma[1]}")
         print(f"Lamnda: {self._args.lmbda[0]}, {self._args.lmbda[1]}")
 
@@ -386,8 +387,7 @@ class Agent:
                         cont_actions[j[0], :],
                         lr)
 
-
-                    for epoch in range(self._args.epochs):
+                    if epoch==0:
                         self.actor_continuous.train(
                             old_cont_policy[j[0], :],
                             copy.copy(cont_states[j[0], ...]),
