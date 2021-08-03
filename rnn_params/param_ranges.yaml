@@ -50,6 +50,20 @@ inp_I_topo:
   - 0.
   - 2.
 
+td_E_kappa:
+  - 0.05
+  - 0.25
+td_I_kappa:
+  - 0.05
+  - 0.25
+td_E_topo:
+  - 0.
+  - 2.
+td_I_topo:
+  - 0.
+  - 2.
+
+
 EE_topo:
   - 0.
   - 2.
