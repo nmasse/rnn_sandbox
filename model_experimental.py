@@ -4,7 +4,6 @@ from itertools import product
 import tensorflow as tf
 import matplotlib.pyplot as plt
 from layers import Linear, Recurrent, Evolve
-from sklearn.metrics.pairwise import cosine_similarity
 
 
 class Model():
@@ -13,7 +12,7 @@ class Model():
 
         self._args = args
         self.learning_type = learning_type
-        self.max_weight_value = 2.
+        self.max_weight_value = 5.
         self.top_down_trainable = True if learning_type=='supervised' else False
         self._set_pref_dirs()
         self.model = self.create_network()
@@ -171,18 +170,23 @@ class Model():
         fixation neurons will not. Fixation neurons will be at the end of
         the array'''
         N = self._args.n_bottom_up - self._args.n_motion_tuned
-        motion_phase = np.linspace(0, 2*np.pi, self._args.n_motion_tuned)
+
 
         # Trying to add spatial topology here
-        if self._args.n_cue_tuned > 1: # if there are two RFs
+        if self._args.n_cue_tuned == 2:
+            # Two RFs
+            motion_phase = np.linspace(0, 2*np.pi, self._args.n_motion_tuned//2)
+            motion_phase = np.concatenate((motion_phase, motion_phase), axis=-1)
             RF_phase = self._args.n_motion_tuned//2 * [0] \
                 + self._args.n_motion_tuned//2 * [2*np.pi/3] \
                 + N * [4*np.pi/3]
-        else:
+        elif self._args.n_cue_tuned<=1:
+            # One RF
+            motion_phase = np.linspace(0, 2*np.pi, self._args.n_motion_tuned)
             RF_phase = self._args.n_motion_tuned * [0] \
                 + N * [np.pi]
-
-        
+        else:
+            assert False, "Not sure how to handle 3 or more cue tuned neurons"
         RF_phase = np.array(RF_phase)
         print('RF_phase', RF_phase)
 
@@ -199,21 +203,10 @@ class Model():
 
         RF_rnn = np.cos(RF_phase[:, np.newaxis] - rnn_phase1[np.newaxis, :])
 
-
         self._inp_rnn_phase = 0.5*motion_rnn  + 0.5*RF_rnn
 
-        input_tuning_sim = np.zeros((self._args.n_hidden, self._args.n_hidden))
-        for i in range(self._inp_rnn_phase.shape[0]):
-            for j in range(i, self._inp_rnn_phase.shape[0]):
-                input_tuning_sim[i,j] = cosine_similarity(self._inp_rnn_phase[i].reshape(1, -1), self._inp_rnn_phase[j].reshape(1,-1))
-                input_tuning_sim[j,i] = input_tuning_sim[i,j]
-
         self._rnn_rnn_phase = 0.5*np.cos(rnn_phase0[:, np.newaxis] - rnn_phase0[np.newaxis, :]) \
-            + 0.5*np.cos(rnn_phase1[:, np.newaxis] - rnn_phase1[np.newaxis, :]) 
-        exc_phase = np.linspace(0, 2*np.pi, self._args.n_exc)
-        inh_phase = np.linspace(0, 2*np.pi, self._args.n_inh)
-        rnn_phase0 = np.concatenate((exc_phase, inh_phase), axis=-1)
-        self._rnn_rnn_phase = 0.5 * input_tuning_sim + 0.5*np.cos(rnn_phase0[:, np.newaxis] - rnn_phase0[np.newaxis, :])
+            + 0.5*np.cos(rnn_phase1[:, np.newaxis] - rnn_phase1[np.newaxis, :])
         self._td_rnn_phase = 0.5*np.cos(td_phase0[:, np.newaxis] - rnn_phase0[np.newaxis, :]) \
             + 0.5*np.cos(td_phase1[:, np.newaxis] - rnn_phase1[np.newaxis, :])
 

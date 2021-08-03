@@ -205,7 +205,7 @@ class TaskManager:
             misc['wrong_choice_penalty']  = self.wrong_choice_penalty
             misc['n_sample']              = self.n_sample
             misc['n_test']                = self.n_test
-            misc['n_RFs']                 = self.n_RFs # make this equal to max number of RFs
+            #misc['n_RFs']                 = self.n_RFs # make this equal to max number of RFs
 
             task_args = [t['name'], i, t['var_delay'], self.dt, self.tuning, t['timing'], self.shape, misc]
             self.task_list.append(task(*task_args))
@@ -383,7 +383,7 @@ def default_tasks():
                      'delay_time'   : 500,
                      'test_time'    : 300}
 
-    monkey_timing = {'dead_time'    : 0,
+    monkey_timing = {'dead_time'    : 3000,
                      'fix_time'     : 500,
                      'sample_time'  : 660,
                      'delay_time'   : 1020,
@@ -399,7 +399,7 @@ def default_tasks():
     DMS['distractor'] = False
     DMS['n_output'] = 3
     DMS['var_delay_max'] = 200
-    DMS['mask_duration'] = 0
+    DMS['mask_duration'] = 40
     DMS['n_sample'] = 1
     DMS['n_test'] = 1
     DMS['trial_length'] = sum(generic_timing.values())
@@ -497,6 +497,7 @@ def default_tasks():
     DMC['n_test'] = 1
     DMC['trial_length'] = sum(generic_timing.values())
     DMC['timing'] = generic_timing
+
 
     DelayGo = {}
     DelayGo['name'] = 'DelayGo'
