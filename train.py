@@ -34,9 +34,10 @@ parser.add_argument('--steady_state_end', type=float, default=1700)
 parser.add_argument('--training_type', type=str, default='supervised')
 parser.add_argument('--rnn_params_fn', type=str, default='./rnn_params/good_params.yaml')
 parser.add_argument('--params_range_fn', type=str, default='./rnn_params/param_ranges.yaml')
-parser.add_argument('--save_path', type=str, default=f'./results/run_{today.strftime("%b-%d-%Y")}/')
+parser.add_argument('--save_path', type=str, default=f'./results/run_{today.strftime("%b-%d-%Y")}/7tasks/')
 parser.add_argument('--ablation_mode', type=str, default=None)
 parser.add_argument('--size_range', type=convert, default=[3000])
+parser.add_argument('--model_type', type=str, default='model')
 
 args = parser.parse_args()
 
@@ -89,8 +90,9 @@ class Agent:
 
     def train(self, rnn_params, counter):
 
-        save_fn = os.path.join(self._args.save_path, f"{self.sz}_hidden/", 'results_'+str(uuid.uuid4())+'.pkl')
-
+        save_fn = os.path.join(self._args.save_path, f"{self.sz}_hidden/", f"{self._args.ablation_mode}", 'results_'+str(uuid.uuid4())+'.pkl')
+        if not os.path.exists(os.path.join(os.path.join(self._args.save_path, f"{self.sz}_hidden/", f"{self._args.ablation_mode}"))):
+            os.makedirs(os.path.join(self._args.save_path, f"{self.sz}_hidden/", f"{self._args.ablation_mode}"))
         results = {
             'args': self._args,
             'rnn_params': rnn_params,
@@ -113,7 +115,7 @@ class Agent:
             return False
 
         h, _ = self.actor.forward_pass(self.dms_batch[0], copy.copy(h_init), copy.copy(m_init))
-        if np.mean(h) > 10.: # just make sure it's not exploding
+        if np.mean(h) > 10. or not np.isfinite(np.mean(h)): # just make sure it's not exploding
             pickle.dump(results, open(save_fn, 'wb'))
             print('Aborting...')
             return False
@@ -125,8 +127,6 @@ class Agent:
                             self.sample_decode_time)
         sd = results['sample_decoding']
         print(f"Decoding accuracy {sd[0]:1.3f}, {sd[1]:1.3f}")
-        if sd[0] < 0.8: 
-            return False
 
 
         print('Calculating average spike rates...')
