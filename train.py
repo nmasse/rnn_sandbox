@@ -44,12 +44,6 @@ gpus = tf.config.experimental.list_physical_devices('GPU')
 tf.config.experimental.set_memory_growth(gpus[args.gpu_idx], True)
 tf.config.experimental.set_visible_devices(gpus[args.gpu_idx], 'GPU')
 
-"""
-tf.config.experimental.set_virtual_device_configuration(
-    gpus[gpu_idx],
-    [tf.config.experimental.VirtualDeviceConfiguration(memory_limit=4900)])
-"""
-
 
 class Agent:
     def __init__(self, args, rnn_params, param_ranges, sz=3000):
@@ -58,7 +52,7 @@ class Agent:
         self._rnn_params = rnn_params
         self._param_ranges = param_ranges
 
-        self.tasks = default_tasks()[:5]
+        self.tasks = default_tasks()#[:5]
         self.n_tasks = len(self.tasks)
         print(f"Training on {self.n_tasks} tasks")
 
@@ -81,15 +75,6 @@ class Agent:
         self.training_batches = [stim.generate_batch(args.batch_size, to_exclude=[]) for _ in range(args.n_stim_batches)]
         self.dms_batch = stim.generate_batch(args.batch_size, rule=0, include_test=True)
         self.sample_decode_time = [(300+200+300+500)//rnn_params.dt, (300+200+300+980)//rnn_params.dt]
-        """
-        plt.imshow(self.dms_batch[0][0,...], aspect='auto')
-        plt.colorbar()
-        plt.show()
-        s1 = np.sum(self.dms_batch[0][0,:,:32])
-        s2 = np.sum(self.dms_batch[0][0,:,32:33])
-        print(s1, s2)
-        1/0
-        """
 
         print('Trainable variables...')
         for v in self.actor.model.trainable_variables:
@@ -105,8 +90,7 @@ class Agent:
     def train(self, rnn_params, counter):
 
         save_fn = os.path.join(self._args.save_path, f"{self.sz}_hidden/", 'results_'+str(uuid.uuid4())+'.pkl')
-        if not os.path.exists(os.path.splitext(save_fn)[0]):
-            os.makedirs(os.path.splitext(save_fn)[0])
+
         results = {
             'args': self._args,
             'rnn_params': rnn_params,
@@ -141,6 +125,8 @@ class Agent:
                             self.sample_decode_time)
         sd = results['sample_decoding']
         print(f"Decoding accuracy {sd[0]:1.3f}, {sd[1]:1.3f}")
+        if sd[0] < 0.8: 
+            return False
 
 
         print('Calculating average spike rates...')

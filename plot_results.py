@@ -3,6 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib as mpl 
 import scipy.signal
+import yaml
 mpl.use('Agg')
 
 parser = argparse.ArgumentParser('')
@@ -37,16 +38,30 @@ def plot_results(data_dir, base_dir = args.base_dir):
         if os.path.isdir(f):
             continue
         x = pickle.load(open(f,'rb'))
+
         if len(x['task_accuracy']) > 0:
+            if len(x['task_accuracy'][-1]) > 5:
+                continue
             if np.mean(x['task_accuracy'][-10:]) > 0.88:
                 initial_mean_h.append(x['initial_mean_h'])
                 final_mean_h.append(x['final_mean_h'])
+
+                # Save out params to yaml
+                p = vars(x['rnn_params'])
+                for k, v in p.items():
+                    if type(v) == np.int64:
+                        p[k] = int(v)
+                    if type(v) == str:
+                        p[k] = float(v)
+                with open(f"rnn_params/params_acc={np.array(x['task_accuracy'][-2:]).mean():.4f}.yaml", 'w') as outfile:
+                    yaml.dump(p, outfile,default_flow_style=False)
             task_acc = np.array(x['task_accuracy'])
             min_accuracy.append(np.amin(task_acc[-5:, :].mean(axis=0)))
             mean_accuracy.append(task_acc[-5:, :].mean())
             accuracy.append(np.stack(x['task_accuracy']))
             sample_decoding.append(x['sample_decoding'])
         mean_h.append(x['steady_state_h'])
+
     accuracy = np.stack(accuracy,axis=0)
     accuracy_all_tasks = np.mean(accuracy,axis=-1)
     boxcar = np.ones((10,1), dtype=np.float32)/10.
