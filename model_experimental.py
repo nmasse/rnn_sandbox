@@ -4,6 +4,7 @@ from itertools import product
 import tensorflow as tf
 import matplotlib.pyplot as plt
 from layers import Linear, Recurrent, Evolve
+from sklearn.metrics.pairwise import cosine_similarity
 
 
 class Model():
@@ -12,7 +13,7 @@ class Model():
 
         self._args = args
         self.learning_type = learning_type
-        self.max_weight_value = 5.
+        self.max_weight_value = 2.
         self.top_down_trainable = True if learning_type=='supervised' else False
         self._set_pref_dirs()
         self.model = self.create_network()
@@ -180,9 +181,10 @@ class Model():
         else:
             RF_phase = self._args.n_motion_tuned * [0] \
                 + N * [np.pi]
+
+        
         RF_phase = np.array(RF_phase)
         print('RF_phase', RF_phase)
-
 
         rnn_phase = np.linspace(0, 2*np.pi, self._args.n_hidden)
         rnn_phase0 = rnn_phase[np.random.permutation(self._args.n_hidden)]
@@ -197,10 +199,21 @@ class Model():
 
         RF_rnn = np.cos(RF_phase[:, np.newaxis] - rnn_phase1[np.newaxis, :])
 
+
         self._inp_rnn_phase = 0.5*motion_rnn  + 0.5*RF_rnn
 
+        input_tuning_sim = np.zeros((self._args.n_hidden, self._args.n_hidden))
+        for i in range(self._inp_rnn_phase.shape[0]):
+            for j in range(i, self._inp_rnn_phase.shape[0]):
+                input_tuning_sim[i,j] = cosine_similarity(self._inp_rnn_phase[i].reshape(1, -1), self._inp_rnn_phase[j].reshape(1,-1))
+                input_tuning_sim[j,i] = input_tuning_sim[i,j]
+
         self._rnn_rnn_phase = 0.5*np.cos(rnn_phase0[:, np.newaxis] - rnn_phase0[np.newaxis, :]) \
-            + 0.5*np.cos(rnn_phase1[:, np.newaxis] - rnn_phase1[np.newaxis, :])
+            + 0.5*np.cos(rnn_phase1[:, np.newaxis] - rnn_phase1[np.newaxis, :]) 
+        exc_phase = np.linspace(0, 2*np.pi, self._args.n_exc)
+        inh_phase = np.linspace(0, 2*np.pi, self._args.n_inh)
+        rnn_phase0 = np.concatenate((exc_phase, inh_phase), axis=-1)
+        self._rnn_rnn_phase = 0.5 * input_tuning_sim + 0.5*np.cos(rnn_phase0[:, np.newaxis] - rnn_phase0[np.newaxis, :])
         self._td_rnn_phase = 0.5*np.cos(td_phase0[:, np.newaxis] - rnn_phase0[np.newaxis, :]) \
             + 0.5*np.cos(td_phase1[:, np.newaxis] - rnn_phase1[np.newaxis, :])
 

@@ -100,7 +100,13 @@ class Agent:
         results['steady_state_h'] = np.mean(h_init)
         print(f"Steady-state activity {results['steady_state_h']:2.4f}")
 
-        if results['steady_state_h'] < 0.02 or results['steady_state_h'] > 0.2:
+        if results['steady_state_h'] < 0.01 or results['steady_state_h'] > 1. or not np.isfinite(results['steady_state_h']):
+            #pickle.dump(results, open(save_fn, 'wb'))
+            print('Aborting...')
+            return False
+
+        h, _ = self.actor.forward_pass(self.dms_batch[0], copy.copy(h_init), copy.copy(m_init))
+        if np.mean(h) < 0.01 or np.mean(h) > 1.:
             #pickle.dump(results, open(save_fn, 'wb'))
             print('Aborting...')
             return False
@@ -115,12 +121,6 @@ class Agent:
         plt.plot(sd)
         plt.show()
         print(f"Decoding accuracy {sd[0]:1.3f}, {sd[1]:1.3f}")
-
-
-        if sd[0] < 0.75 or sd[1] < 0.5:
-            #pickle.dump(results, open(save_fn, 'wb'))
-            print('Aborting...')
-            return False
 
 
         print('Calculating average spike rates...')

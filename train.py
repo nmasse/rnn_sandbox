@@ -12,28 +12,54 @@ from TaskManager import TaskManager, default_tasks
 import yaml
 import time
 import uuid
+from datetime import date
+today = date.today()
+tf.keras.backend.set_floatx('float32')
 
+def convert(argument):
+    return list(map(int, argument.split(',')))
 
-gpu_idx = 2
+parser = argparse.ArgumentParser('')
+parser.add_argument('gpu_idx', type=int)
+parser.add_argument('--n_iterations', type=int, default=250)
+parser.add_argument('--batch_size', type=int, default=256)
+parser.add_argument('--n_stim_batches', type=int, default=250)
+parser.add_argument('--learning_rate', type=float, default=0.02)
+parser.add_argument('--adam_epsilon', type=float, default=1e-7)
+parser.add_argument('--n_learning_rate_ramp', type=int, default=20)
+parser.add_argument('--save_frs_by_condition', type=bool, default=False)
+parser.add_argument('--max_h_for_output', type=float, default=999.)
+parser.add_argument('--steady_state_start', type=float, default=1300)
+parser.add_argument('--steady_state_end', type=float, default=1700)
+parser.add_argument('--training_type', type=str, default='supervised')
+parser.add_argument('--rnn_params_fn', type=str, default='./rnn_params/good_params.yaml')
+parser.add_argument('--params_range_fn', type=str, default='./rnn_params/param_ranges.yaml')
+parser.add_argument('--save_path', type=str, default=f'./results/run_{today.strftime("%b-%d-%Y")}/')
+parser.add_argument('--ablation_mode', type=str, default=None)
+parser.add_argument('--size_range', type=convert, default=[3000])
+
+args = parser.parse_args()
+
 gpus = tf.config.experimental.list_physical_devices('GPU')
-tf.config.experimental.set_visible_devices(gpus[gpu_idx], 'GPU')
-"""
-tf.config.experimental.set_virtual_device_configuration(
-    gpus[gpu_idx],
-    [tf.config.experimental.VirtualDeviceConfiguration(memory_limit=4900)])
-"""
+tf.config.experimental.set_memory_growth(gpus[args.gpu_idx], True)
+tf.config.experimental.set_visible_devices(gpus[args.gpu_idx], 'GPU')
 
 
 class Agent:
-    def __init__(self, args, rnn_params, param_ranges):
+    def __init__(self, args, rnn_params, param_ranges, sz=3000):
 
         self._args = args
         self._rnn_params = rnn_params
         self._param_ranges = param_ranges
 
-        self.tasks = default_tasks()[:5]
+        self.tasks = default_tasks()#[:5]
         self.n_tasks = len(self.tasks)
         print(f"Training on {self.n_tasks} tasks")
+
+        # Define E/I number based on argument
+        self._rnn_params.n_exc = int(0.8 * sz)
+        self._rnn_params.n_inh = int(0.2 * sz)
+        self.sz = sz
 
         alpha = rnn_params.dt / rnn_params.tc_soma
         noise_std = np.sqrt(2/alpha) * rnn_params.noise_input_sd
@@ -49,15 +75,6 @@ class Agent:
         self.training_batches = [stim.generate_batch(args.batch_size, to_exclude=[]) for _ in range(args.n_stim_batches)]
         self.dms_batch = stim.generate_batch(args.batch_size, rule=0, include_test=True)
         self.sample_decode_time = [(300+200+300+500)//rnn_params.dt, (300+200+300+980)//rnn_params.dt]
-        """
-        plt.imshow(self.dms_batch[0][0,...], aspect='auto')
-        plt.colorbar()
-        plt.show()
-        s1 = np.sum(self.dms_batch[0][0,:,:32])
-        s2 = np.sum(self.dms_batch[0][0,:,32:33])
-        print(s1, s2)
-        1/0
-        """
 
         print('Trainable variables...')
         for v in self.actor.model.trainable_variables:
@@ -72,7 +89,8 @@ class Agent:
 
     def train(self, rnn_params, counter):
 
-        save_fn = os.path.join(self._args.save_path, 'results_'+str(uuid.uuid4())+'.pkl')
+        save_fn = os.path.join(self._args.save_path, f"{self.sz}_hidden/", 'results_'+str(uuid.uuid4())+'.pkl')
+
         results = {
             'args': self._args,
             'rnn_params': rnn_params,
@@ -107,6 +125,8 @@ class Agent:
                             self.sample_decode_time)
         sd = results['sample_decoding']
         print(f"Decoding accuracy {sd[0]:1.3f}, {sd[1]:1.3f}")
+        if sd[0] < 0.8: 
+            return False
 
 
         print('Calculating average spike rates...')
@@ -165,6 +185,12 @@ class Agent:
                     new_value = np.random.uniform(v[0], v[1])
                 params[k] = new_value
 
+            # For all parameters being ablated -- ablate
+            if self._args.ablation_mode is not None:
+                for k, v in vars(self._rnn_params).items():
+                    if self._args.ablation_mode in k and not k.startswith("tc"):
+                        params[k] = 0.
+
             success = self.train(argparse.Namespace(**params), i)
             if success:
                 full_runs += 1
@@ -183,26 +209,6 @@ def define_dependent_params(params, stim):
     print(params)
     return params
 
-
-parser = argparse.ArgumentParser('')
-parser.add_argument('--n_iterations', type=int, default=250)
-parser.add_argument('--batch_size', type=int, default=256)
-parser.add_argument('--n_stim_batches', type=int, default=250)
-parser.add_argument('--learning_rate', type=float, default=0.02)
-parser.add_argument('--adam_epsilon', type=float, default=1e-7)
-parser.add_argument('--n_learning_rate_ramp', type=int, default=20)
-parser.add_argument('--save_frs_by_condition', type=bool, default=False)
-parser.add_argument('--max_h_for_output', type=float, default=999.)
-parser.add_argument('--steady_state_start', type=float, default=1300)
-parser.add_argument('--steady_state_end', type=float, default=1700)
-parser.add_argument('--training_type', type=str, default='supervised')
-parser.add_argument('--rnn_params_fn', type=str, default='./rnn_params/good_params.yaml')
-parser.add_argument('--params_range_fn', type=str, default='./rnn_params/param_ranges.yaml')
-parser.add_argument('--save_path', type=str, default='./results/run_080121_5tasks_v3')
-
-
-args = parser.parse_args()
-
 if not os.path.exists(args.save_path):
     os.makedirs(args.save_path)
 
@@ -215,5 +221,8 @@ rnn_params = yaml.load(open(args.rnn_params_fn), Loader=yaml.FullLoader)
 param_ranges = yaml.load(open(args.params_range_fn), Loader=yaml.FullLoader)
 
 rnn_params = argparse.Namespace(**rnn_params)
-agent = Agent(args, rnn_params, param_ranges)
-agent.main_loop()
+
+# Loop through range of sizes
+for sz in args.size_range:
+    agent = Agent(args, rnn_params, param_ranges, sz=sz)
+    agent.main_loop()

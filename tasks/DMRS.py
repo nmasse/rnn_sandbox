@@ -50,11 +50,12 @@ class DMRS(Task.Task):
                     possible_dirs = np.setdiff1d(np.arange(self.n_motion_dirs, dtype=np.int32), matching_dir)
                     test_dir      = np.random.choice(possible_dirs)
                 # Distractor direction
-                if dist_match == 1:
+                '''if dist_match == 1:
                     dist_dir = matching_dir
                 else:
                     possible_dirs = np.setdiff1d(np.arange(self.n_motion_dirs, dtype=np.int32), matching_dir)
-                    dist_dir      = np.random.choice(possible_dirs)
+                    dist_dir      = np.random.choice(possible_dirs)'''
+                dist_dir = np.random.choice(self.n_motion_dirs)
 
             else:
                 test_dir     = np.random.randint(self.n_motion_dirs)
