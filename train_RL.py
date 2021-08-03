@@ -12,6 +12,7 @@ from actor import ActorRL, ActorContinuousRL
 from TaskManager import TaskManager, TaskGym, default_tasks
 import yaml
 import time
+from datetime import datetime
 import uuid
 
 
@@ -112,6 +113,7 @@ class Agent:
             'rnn_params': rnn_params,
             'episode_scores': [[] for _ in range(self.n_tasks)],
             'episode_times': [[] for _ in range(self.n_tasks)],
+            'date': datetime.now()
         }
 
 
@@ -216,7 +218,6 @@ class Agent:
             old_policies_r = np.reshape(np.stack(old_policies, axis=0), (-1, 1))
             cont_old_policies_r = np.reshape(np.stack(cont_old_policies, axis=0), (-1, 1))
             gaes_r = np.reshape(gaes, (-1, value.shape[-1]))
-            #gaes_normalized_r = np.reshape(gaes_normalized, (-1, value.shape[-1]))
             td_targets_r = np.reshape(td_targets, (-1, value.shape[-1]))
             masks_r = np.reshape(masks, (-1, 1))
 
@@ -226,7 +227,6 @@ class Agent:
                 ind = np.random.permutation(N)
                 ind = np.split(np.reshape(ind, (self._args.n_minibatches, -1)), self._args.n_minibatches, axis=0)
                 for j in ind:
-                    tt=time.time()
                     loss, critic_loss, discrete_grad_norm = self.actor.train(
                         copy.copy(states_r[j[0], ...]),
                         cont_actions_r[j[0], :],
@@ -298,15 +298,15 @@ parser.add_argument('--normalize_gae_cont', type=bool, default=True)
 parser.add_argument('--entropy_coeff', type=float, default=0.002)
 parser.add_argument('--critic_coeff', type=float, default=1.)
 parser.add_argument('--learning_rate', type=float, default=5e-4)
-parser.add_argument('--cont_learning_rate', type=float, default=2e-5)
+parser.add_argument('--cont_learning_rate', type=float, default=5e-5)
 parser.add_argument('--clip_grad_norm', type=float, default=1.)
 parser.add_argument('--n_learning_rate_ramp', type=int, default=10)
 parser.add_argument('--save_frs_by_condition', type=bool, default=False)
 parser.add_argument('--training_type', type=str, default='RL')
-parser.add_argument('--rnn_params_fn', type=str, default='./rnn_params/rl_params5.yaml')
+parser.add_argument('--rnn_params_fn', type=str, default='./rnn_params/params_acc=0.9093.yaml')
 parser.add_argument('--save_path', type=str, default='./results/RL')
 parser.add_argument('--start_action_std', type=float, default=0.1)
-parser.add_argument('--end_action_std', type=float, default=0.05)
+parser.add_argument('--end_action_std', type=float, default=0.1)
 parser.add_argument('--OU_noise', type=bool, default=False)
 parser.add_argument('--OU_theta', type=float, default=0.3)
 parser.add_argument('--OU_clip_noise', type=float, default=3.)

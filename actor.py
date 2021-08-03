@@ -1,7 +1,6 @@
 import tensorflow as tf
 import numpy as np
 import os
-#import model
 from tensorflow.keras.layers import Dense
 from model import Model
 
