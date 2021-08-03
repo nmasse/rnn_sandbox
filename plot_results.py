@@ -40,9 +40,9 @@ def plot_results(data_dir, base_dir = args.base_dir):
         x = pickle.load(open(f,'rb'))
 
         if len(x['task_accuracy']) > 0:
-            if len(x['task_accuracy'][-1]) > 5:
+            if len(x['task_accuracy'][-1]) != 7:
                 continue
-            if np.mean(x['task_accuracy'][-10:]) > 0.88:
+            if np.mean(x['task_accuracy'][-10:]) > 0.85:
                 initial_mean_h.append(x['initial_mean_h'])
                 final_mean_h.append(x['final_mean_h'])
 
@@ -60,7 +60,8 @@ def plot_results(data_dir, base_dir = args.base_dir):
             mean_accuracy.append(task_acc[-5:, :].mean())
             accuracy.append(np.stack(x['task_accuracy']))
             sample_decoding.append(x['sample_decoding'])
-        mean_h.append(x['steady_state_h'])
+        if np.isfinite(x['steady_state_h']):
+            mean_h.append(x['steady_state_h'])
 
     accuracy = np.stack(accuracy,axis=0)
     accuracy_all_tasks = np.mean(accuracy,axis=-1)
