@@ -2,7 +2,7 @@ import tensorflow as tf
 import numpy as np
 import os
 from tensorflow.keras.layers import Dense
-from model import Model
+import model, model_experimental
 
 
 class BaseActor:
@@ -61,7 +61,8 @@ class ActorSL(BaseActor):
         self._args.training_type = 'supervised'
         self._rnn_params = rnn_params
         if rnn_params is not None:
-            self.RNN = Model(self._rnn_params, learning_type='supervised')
+            m = eval(f"{args.model_type}.Model")
+            self.RNN = m(self._rnn_params, learning_type='supervised')
             self.model = self.RNN.model
         else:
             self.model = tf.keras.models.load_model(saved_model_path)

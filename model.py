@@ -172,12 +172,13 @@ class Model():
         exc_phase = np.linspace(0, 2*np.pi, self._args.n_exc)
         inh_phase = np.linspace(0, 2*np.pi, self._args.n_inh)
         rnn_phase = np.concatenate((exc_phase, inh_phase), axis=-1)
+        td_phase = np.linspace(0, 2*np.pi, self._args.n_top_down_hidden)
 
         self._inp_rnn_phase = np.cos(input_phase[:, np.newaxis] - rnn_phase[np.newaxis, :])
         N = self._args.n_bottom_up - self._args.n_motion_tuned
         self._inp_rnn_phase = np.vstack((self._inp_rnn_phase, np.zeros((N, self._args.n_hidden), dtype = np.float32)))
         self._rnn_rnn_phase = np.cos(rnn_phase[:, np.newaxis] - rnn_phase[np.newaxis, :])
-
+        self._td_rnn_phase = np.cos(td_phase[:, np.newaxis] - rnn_phase[np.newaxis, :])
 
     def initialize_decay_time_constants(self):
 
@@ -201,6 +202,13 @@ class Model():
                         self._args.td_I_kappa,
                         1.,
                         size = (self._args.n_top_down_hidden, self._args.n_inh))
+
+        We *= von_mises(
+                self._td_rnn_phase[:, :self._args.n_exc],
+                self._args.td_E_topo)
+        Wi *= von_mises(
+                self._td_rnn_phase[:, self._args.n_exc:],
+                self._args.td_I_topo)
 
 
         w1 = self._args.td_weight * np.concatenate((We, Wi), axis=1)

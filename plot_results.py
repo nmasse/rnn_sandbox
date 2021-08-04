@@ -2,9 +2,12 @@ import os, pickle, scipy, argparse
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib as mpl 
+import matplotlib.transforms as transforms
 import scipy.signal
 import yaml
 mpl.use('Agg')
+params = {'mathtext.default': 'regular' }          
+plt.rcParams.update(params)
 
 parser = argparse.ArgumentParser('')
 parser.add_argument('data_dir', type=str, default='./results/')
@@ -40,11 +43,14 @@ def plot_results(data_dir, base_dir = args.base_dir):
         x = pickle.load(open(f,'rb'))
 
         if len(x['task_accuracy']) > 0:
-            if len(x['task_accuracy'][-1]) > 5:
+            if len(x['task_accuracy'][-1]) != 7:
                 continue
-            if np.mean(x['task_accuracy'][-10:]) > 0.88:
-                initial_mean_h.append(x['initial_mean_h'])
-                final_mean_h.append(x['final_mean_h'])
+            if len(x['task_accuracy']) != 400:
+                continue
+            if np.mean(x['task_accuracy'][-10:]) > 0.9:
+                print(x['task_accuracy'][-10:])
+                initial_mean_h.append(x['initial_mean_h'][15:])
+                final_mean_h.append(x['final_mean_h'][15:])
 
                 # Save out params to yaml
                 p = vars(x['rnn_params'])
@@ -60,8 +66,12 @@ def plot_results(data_dir, base_dir = args.base_dir):
             mean_accuracy.append(task_acc[-5:, :].mean())
             accuracy.append(np.stack(x['task_accuracy']))
             sample_decoding.append(x['sample_decoding'])
-        mean_h.append(x['steady_state_h'])
+        if np.isfinite(x['steady_state_h']) and x['steady_state_h'] < 1000:
+            mean_h.append(x['steady_state_h'])
+        else:
+            mean_h.append(1000)
 
+    N_BINS = 19
     accuracy = np.stack(accuracy,axis=0)
     accuracy_all_tasks = np.mean(accuracy,axis=-1)
     boxcar = np.ones((10,1), dtype=np.float32)/10.
@@ -71,14 +81,27 @@ def plot_results(data_dir, base_dir = args.base_dir):
     f,ax = plt.subplots(3,2,figsize = (10,12))
 
     # Row 1: activity/sample decoding plots
-    ax[0,0].hist(np.log10(mean_h))
-    ax[0,0].set(xlabel="Log mean hidden activity",
+    counts, bins, patches = ax[0,0].hist(np.log10(mean_h), N_BINS)
+    ax[0,0].set(xlabel="$\log_2$ mean hidden activity",
                 ylabel="Count",
-                title=f"Log mean hidden activity N={len(mean_h)}")
-    ax[0,1].hist(sample_decoding)
+                title=f"$\log_2$ mean hidden activity (N={len(mean_h)})")
+    
+
+    # Make ticks to be the midpoints of the bins
+    bin_centers = [(bins[i] + bins[i + 1]) / 2 for i in range(len(bins) - 1)]
+    bins_to_label = [bin_centers[i] for i in range(0, len(bin_centers), 2)]
+    bin_labels = [f"{b:.1f}" for b in bins_to_label]
+    bin_labels[-1] = f"{bin_labels[-1]}+"
+    ax[0,0].set_xticks(bins_to_label)
+    ax[0,0].set_xticklabels(bin_labels)
+
+    ax[0,1].hist(sample_decoding, N_BINS)
+    ax[0,1].axvline(x=1/6.0, linestyle='--', color='red', label=f'Chance ({float(1/6.)*100:.2f}%)')
+    ax[0,1].legend()
     ax[0,1].set(xlabel="Initial sample decoding",
                 ylabel="Count",
-                title=f"Initial sample decoding N={len(sample_decoding)}")
+                title=f"Initial sample decoding (N={len(sample_decoding)})")
+    
 
     # Row 2: accuracy plots
     ax[1,0].plot(filtered_acc)
@@ -86,23 +109,31 @@ def plot_results(data_dir, base_dir = args.base_dir):
     ax[1,0].set_xlabel('Training batches (1 batch = 256 trials)')
     ax[1,0].set_ylabel('Task accuracy')
     ax[1,0].set_title(f'Accuracy during training N={len(sample_decoding)}')
-    ax[1,1].hist(filtered_acc[-1,:],20)
+    ax[1,1].hist(filtered_acc[-1,:],N_BINS)
+    ax[1,1].axvline(x=0.5, linestyle='--', color='red', label=f'Chance (50%)')
+    ax[1,1].legend()
     ax[1,1].set_xlabel('Final task accuracy')
     ax[1,1].set_ylabel('Count')
-    ax[1,1].set_title(f'Final task accuracy N={len(sample_decoding)}')
+    ax[1,1].set_title(f'Final task accuracy (N={len(sample_decoding)})')
 
-    # Row 3: Activity post-training, accuracy vs. 
-    ax[2,0].plot(np.array(initial_mean_h).T, 'b')
-    ax[2,0].plot(np.array(final_mean_h).T, 'r')
-    ax[2,0].grid(True)
-    ax[2,0].set_xlabel('Time (timesteps)')
-    ax[2,0].set_ylabel('Firing rate')
-    ax[2,0].set_title(f'Mean firing rates, DMS ({len(final_mean_h)} highest-accuracy networks)')
+    # Row 3: Activity post-training, mean accuracy vs. min task accuracy 
+    trans = ax[2,0].get_xaxis_transform()
+    ax[2,0].plot(np.arange(-10*20, (final_mean_h[0].shape[0] - 10)*20, 20), np.array(final_mean_h).T)
+    ax[2,0].set(ylim=[ax[2,0].get_ylim()[0], ax[2,0].get_ylim()[1]*1.1])
+    ax[2,0].axvline(x=0, linestyle='--', color='grey')
+    ax[2,0].text(20, ax[2,0].get_ylim()[1]*0.925, 'Sample\nON', fontweight='bold', fontsize=10, color='dimgrey')
+    ax[2,0].axvline(x=300, linestyle='--', color='grey')
+    ax[2,0].text(320, ax[2,0].get_ylim()[1]*0.925, 'Sample\nOFF', fontweight='bold', fontsize=10, color='dimgrey')
+    ax[2,0].axvline(x=1300, linestyle='--', color='grey')
+    ax[2,0].text(1320, ax[2,0].get_ylim()[1]*0.925, 'Test\nON', fontweight='bold', fontsize=10, color='dimgrey')
+    ax[2,0].set(xlabel='Time relative to sample onset (ms)',
+                ylabel='Firing rate',
+                title=f'Mean firing rates, DMS ({len(final_mean_h)} highest-accuracy networks)')
     ax[2,1].scatter(mean_accuracy, min_accuracy, alpha=0.3)
     ax[2,1].plot()
     ax[2,1].set(xlabel='Mean accuracy across tasks',
                 ylabel='Min. task accuracy',
-                title=f'Min vs. mean task accuracy, N={len(sample_decoding)}',
+                title=f'Min vs. mean task accuracy (N={len(sample_decoding)})',
                 xlim=[0.45, 1.0],
                 ylim=[0.25, 1.0])
     

@@ -34,10 +34,11 @@ parser.add_argument('--steady_state_end', type=float, default=1700)
 parser.add_argument('--training_type', type=str, default='supervised')
 parser.add_argument('--rnn_params_fn', type=str, default='./rnn_params/good_params.yaml')
 parser.add_argument('--params_range_fn', type=str, default='./rnn_params/param_ranges.yaml')
-parser.add_argument('--save_path', type=str, default=f'./results/run_{today.strftime("%b-%d-%Y")}_exp/')
+parser.add_argument('--save_path', type=str, default=f'./results/run_{today.strftime("%b-%d-%Y")}/')
 parser.add_argument('--ablation_mode', type=str, default=None)
 parser.add_argument('--size_range', type=convert, default=[2500])
 parser.add_argument('--restrict_output_to_exc', type=bool, default=False)
+
 
 args = parser.parse_args()
 
@@ -91,9 +92,15 @@ class Agent:
 
     def train(self, rnn_params, counter):
 
+<<<<<<< HEAD
         save_fn = os.path.join(self._args.save_path, f"{self.sz}_hidden/", 'results_'+str(uuid.uuid4())+'.pkl')
         save_fn = os.path.join(self._args.save_path, 'results_'+str(uuid.uuid4())+'.pkl')
 
+=======
+        save_fn = os.path.join(self._args.save_path, f"{self.sz}_hidden/", f"{self._args.ablation_mode}", f"{self._args.model_type}", 'results_'+str(uuid.uuid4())+'.pkl')
+        if not os.path.exists(os.path.join(os.path.join(self._args.save_path, f"{self.sz}_hidden/", f"{self._args.ablation_mode}", f"{self._args.model_type}"))):
+            os.makedirs(os.path.join(self._args.save_path, f"{self.sz}_hidden/", f"{self._args.ablation_mode}", f"{self._args.model_type}"))
+>>>>>>> 744e5c6033f59ffb6f7d024c27ab1bd8444c7c15
         results = {
             'args': self._args,
             'rnn_params': rnn_params,
@@ -116,8 +123,13 @@ class Agent:
             return False
 
         h, _ = self.actor.forward_pass(self.dms_batch[0], copy.copy(h_init), copy.copy(m_init))
+<<<<<<< HEAD
         if np.mean(h) > 10.: # just make sure it's not exploding
             #pickle.dump(results, open(save_fn, 'wb'))
+=======
+        if np.mean(h) > 10. or not np.isfinite(np.mean(h)): # just make sure it's not exploding
+            pickle.dump(results, open(save_fn, 'wb'))
+>>>>>>> 744e5c6033f59ffb6f7d024c27ab1bd8444c7c15
             print('Aborting...')
             return False
 
@@ -128,6 +140,10 @@ class Agent:
                             self.sample_decode_time)
         sd = results['sample_decoding']
         print(f"Decoding accuracy {sd[0]:1.3f}, {sd[1]:1.3f}")
+<<<<<<< HEAD
+=======
+
+>>>>>>> 744e5c6033f59ffb6f7d024c27ab1bd8444c7c15
 
         print('Calculating average spike rates...')
         results['initial_mean_h'] = np.mean(h.numpy(), axis = (0,2))
@@ -158,6 +174,8 @@ class Agent:
                 print("Task accuracies " + " | ".join([f"{accuracies[i]:1.3f}" for i in range(self.n_tasks)]))
             results['task_accuracy'].append(accuracies)
             results['loss'].append(loss.numpy())
+            if (j+1) % 50 == 0:
+                results[f'iter_{j + 1}_mean_h'] = np.mean(h.numpy(), axis = (0,2))
 
         h, _ = self.actor.forward_pass(self.dms_batch[0], copy.copy(h_init), copy.copy(m_init))
         results['final_mean_h'] = np.mean(h.numpy(), axis = (0,2))
