@@ -16,7 +16,7 @@ from datetime import datetime
 import uuid
 
 
-gpu_idx = 2
+gpu_idx = 3
 gpus = tf.config.experimental.list_physical_devices('GPU')
 tf.config.experimental.set_visible_devices(gpus[gpu_idx], 'GPU')
 """
@@ -24,7 +24,7 @@ tf.config.experimental.set_virtual_device_configuration(
     gpus[gpu_idx],
     [tf.config.experimental.VirtualDeviceConfiguration(memory_limit=4800)])
 """
-
+#os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
 
 class Agent:
     def __init__(self, args, rnn_params):
@@ -38,20 +38,19 @@ class Agent:
         print(f"Modulation time constant {self._rnn_params.tc_modulator}")
         self._rnn_params.noise_rnn_sd = 0.0
         print(f"Setting noise to {self._rnn_params.noise_rnn_sd}")
+        self._rnn_params.n_motion_tuned = 32 # This is needed for later dependencies, assuming full 7 tasks with two RFs
+        print(f"Setting number of motion tuned to {self._rnn_params.n_motion_tuned}")
+        print(f"Bottom up size {self._rnn_params.n_bottom_up}")
+        self._rnn_params.restrict_output_to_exc = args.restrict_output_to_exc
 
+        tasks = default_tasks()
+        for task in tasks:
+            if 'mask_duration' in task.keys():
+                task['mask_duration'] = 0
 
-
-        tasks = default_tasks()[:5]
         self._args.tasks = tasks
         self.n_tasks = len(tasks)
         print(f'Number of tasks {self.n_tasks}')
-        stim = TaskManager(
-                tasks,
-                n_motion_tuned=rnn_params.n_motion_tuned,
-                n_fix_tuned=rnn_params.n_fix_tuned,
-                batch_size=args.batch_size, tf2=False)
-
-        self._rnn_params = define_dependent_params(args, self._rnn_params, stim)
 
         self.env = TaskGym(
                     tasks,
@@ -60,15 +59,12 @@ class Agent:
                     buffer_size=10000,
                     new_task_prob=1.)
 
-        self.dms_batch = stim.generate_batch(256, rule=0, include_test=True)
-
         self.actor = ActorRL(args, self._rnn_params)
 
-        print(f"cont_actor_input_dim {self._rnn_params.cont_actor_input_dim}")
-        print(f"Bottom up size {self._rnn_params.n_bottom_up}")
+
         self.actor_cont = ActorContinuousRL(
                                 self._args,
-                                self._rnn_params.cont_actor_input_dim,
+                                self._rnn_params.n_top_down,
                                 self._args.cont_action_dim,
                                 self._args.action_bound)
 
@@ -140,8 +136,6 @@ class Agent:
 
             actor_cont_std = (1-alpha) * self._args.start_action_std +  alpha * self._args.end_action_std
             actor_cont_std = np.float32(actor_cont_std)
-
-
             states, actions, values , rewards, old_policies = [], [], [], [], []
             cont_states, cont_actions, cont_old_policies = [], [], []
 
@@ -222,6 +216,8 @@ class Agent:
             masks_r = np.reshape(masks, (-1, 1))
 
             N = states_r.shape[0]
+            d_norms = []
+            c_norms = []
             for epoch in range(self._args.epochs):
 
                 ind = np.random.permutation(N)
@@ -237,6 +233,7 @@ class Agent:
                         td_targets_r[j[0], :],
                         old_policies_r[j[0], :],
                         masks_r[j[0], :])
+                    d_norms.append(np.round(discrete_grad_norm.numpy(),4))
 
                     if epoch == 0:
                         loss, cont_grad_norm = self.actor_cont.train(
@@ -246,6 +243,7 @@ class Agent:
                             cont_old_policies_r[j[0], ...],
                             masks_r[j[0], :],
                             actor_cont_std)
+                        c_norms.append(np.round(cont_grad_norm.numpy(),4))
 
 
             h_exc = np.stack(activity, axis=0)[...,:self._rnn_params.n_exc]
@@ -259,6 +257,8 @@ class Agent:
             s = "Task scores " + " | ".join([f"{running_epiosde_scores[i]:1.3f}" for i in range(self.n_tasks)])
             s += f" | Overal: {np.mean(running_epiosde_scores):1.3f}"
             print(s)
+            #print(d_norms)
+            #print(c_norms)
             t0 = time.time()
             if ep%10==0:
                 pickle.dump(results, open(save_fn,'wb'))
@@ -271,15 +271,17 @@ def define_dependent_params(args, rnn_params, stim):
 
     rnn_params.n_actions = stim.n_output
     rnn_params.n_hidden = rnn_params.n_exc + rnn_params.n_inh
-    #rnn_params.n_bottom_up = stim.n_motion_tuned + stim.n_fix_tuned
-    rnn_params.n_bottom_up = stim.n_motion_tuned + stim.n_fix_tuned
+
+    rnn_params.n_bottom_up = stim.n_motion_tuned + stim.n_fix_tuned + stim.n_cue_tuned
     rnn_params.n_top_down = args.cont_action_dim
+    rnn_params.n_motion_tuned = stim.n_motion_tuned
     rnn_params.n_cue_tuned = stim.n_cue_tuned
     rnn_params.n_fix_tuned = stim.n_fix_tuned
     rnn_params.max_h_for_output = args.max_h_for_output
-    rnn_params.cont_actor_input_dim = stim.n_rule_tuned + stim.n_fix_tuned
+    rnn_params.cont_actor_input_dim = stim.n_rule_tuned + stim.n_fix_tuned + stim.n_cue_tuned
 
-
+    print('RNN params')
+    print(rnn_params)
 
     return rnn_params
 
@@ -303,7 +305,7 @@ parser.add_argument('--clip_grad_norm', type=float, default=1.)
 parser.add_argument('--n_learning_rate_ramp', type=int, default=10)
 parser.add_argument('--save_frs_by_condition', type=bool, default=False)
 parser.add_argument('--training_type', type=str, default='RL')
-parser.add_argument('--rnn_params_fn', type=str, default='./rnn_params/params_acc=0.9093.yaml')
+parser.add_argument('--rnn_params_fn', type=str, default='./rnn_params/rl_params7.yaml')
 parser.add_argument('--save_path', type=str, default='./results/RL')
 parser.add_argument('--start_action_std', type=float, default=0.1)
 parser.add_argument('--end_action_std', type=float, default=0.1)
@@ -314,6 +316,8 @@ parser.add_argument('--max_h_for_output', type=float, default=25.)
 parser.add_argument('--action_bound', type=float, default=5)
 parser.add_argument('--cont_action_dim', type=int, default=64)
 parser.add_argument('--disable_cont_action', type=bool, default=False)
+parser.add_argument('--restrict_output_to_exc', type=bool, default=False)
+
 
 
 args = parser.parse_args()

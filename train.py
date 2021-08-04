@@ -21,10 +21,10 @@ def convert(argument):
 
 parser = argparse.ArgumentParser('')
 parser.add_argument('gpu_idx', type=int)
-parser.add_argument('--n_iterations', type=int, default=250)
+parser.add_argument('--n_iterations', type=int, default=400)
 parser.add_argument('--batch_size', type=int, default=256)
-parser.add_argument('--n_stim_batches', type=int, default=250)
-parser.add_argument('--learning_rate', type=float, default=0.02)
+parser.add_argument('--n_stim_batches', type=int, default=200)
+parser.add_argument('--learning_rate', type=float, default=0.01)
 parser.add_argument('--adam_epsilon', type=float, default=1e-7)
 parser.add_argument('--n_learning_rate_ramp', type=int, default=20)
 parser.add_argument('--save_frs_by_condition', type=bool, default=False)
@@ -34,9 +34,10 @@ parser.add_argument('--steady_state_end', type=float, default=1700)
 parser.add_argument('--training_type', type=str, default='supervised')
 parser.add_argument('--rnn_params_fn', type=str, default='./rnn_params/good_params.yaml')
 parser.add_argument('--params_range_fn', type=str, default='./rnn_params/param_ranges.yaml')
-parser.add_argument('--save_path', type=str, default=f'./results/run_{today.strftime("%b-%d-%Y")}/')
+parser.add_argument('--save_path', type=str, default=f'./results/run_{today.strftime("%b-%d-%Y")}_exp/')
 parser.add_argument('--ablation_mode', type=str, default=None)
-parser.add_argument('--size_range', type=convert, default=[3000])
+parser.add_argument('--size_range', type=convert, default=[2500])
+parser.add_argument('--restrict_output_to_exc', type=bool, default=False)
 
 args = parser.parse_args()
 
@@ -59,6 +60,7 @@ class Agent:
         # Define E/I number based on argument
         self._rnn_params.n_exc = int(0.8 * sz)
         self._rnn_params.n_inh = int(0.2 * sz)
+        self._rnn_params.restrict_output_to_exc = args.restrict_output_to_exc
         self.sz = sz
 
         alpha = rnn_params.dt / rnn_params.tc_soma
@@ -90,6 +92,7 @@ class Agent:
     def train(self, rnn_params, counter):
 
         save_fn = os.path.join(self._args.save_path, f"{self.sz}_hidden/", 'results_'+str(uuid.uuid4())+'.pkl')
+        save_fn = os.path.join(self._args.save_path, 'results_'+str(uuid.uuid4())+'.pkl')
 
         results = {
             'args': self._args,
@@ -107,14 +110,14 @@ class Agent:
         results['steady_state_h'] = np.mean(h_init)
         print(f"Steady-state activity {results['steady_state_h']:2.4f}")
 
-        if results['steady_state_h'] < 0.01 or results['steady_state_h'] > 1:
-            pickle.dump(results, open(save_fn, 'wb'))
+        if results['steady_state_h'] < 0.01 or results['steady_state_h'] > 1.:
+            #pickle.dump(results, open(save_fn, 'wb'))
             print('Aborting...')
             return False
 
         h, _ = self.actor.forward_pass(self.dms_batch[0], copy.copy(h_init), copy.copy(m_init))
         if np.mean(h) > 10.: # just make sure it's not exploding
-            pickle.dump(results, open(save_fn, 'wb'))
+            #pickle.dump(results, open(save_fn, 'wb'))
             print('Aborting...')
             return False
 
@@ -125,9 +128,6 @@ class Agent:
                             self.sample_decode_time)
         sd = results['sample_decoding']
         print(f"Decoding accuracy {sd[0]:1.3f}, {sd[1]:1.3f}")
-        if sd[0] < 0.8: 
-            return False
-
 
         print('Calculating average spike rates...')
         results['initial_mean_h'] = np.mean(h.numpy(), axis = (0,2))
@@ -200,13 +200,13 @@ def define_dependent_params(params, stim):
 
     params.n_actions = stim.n_output
     params.n_hidden = params.n_exc + params.n_inh
-    params.n_bottom_up = stim.n_motion_tuned  + stim.n_fix_tuned # + stim.n_cue_tuned
+    params.n_bottom_up = stim.n_motion_tuned  + stim.n_fix_tuned + stim.n_cue_tuned
     params.n_motion_tuned = stim.n_motion_tuned
     params.n_cue_tuned = stim.n_cue_tuned
     params.n_fix_tuned = stim.n_fix_tuned
     params.n_top_down = stim.n_rule_tuned + stim.n_cue_tuned + stim.n_fix_tuned
     params.max_h_for_output = args.max_h_for_output
-    print(params)
+
     return params
 
 if not os.path.exists(args.save_path):

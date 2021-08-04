@@ -94,16 +94,15 @@ class Model():
         soma_input = bottom_up_current + top_down_current + rec_current * effective_mod + noise
         h = Evolve(alpha_soma, trainable=False, name='alpha_soma')((h_input, soma_input))
         h = tf.nn.relu(h)
-        #h_exc = h[..., :self._args.n_exc]
-        h_exc = h[..., :]
+        h_out = h[..., :self._args.n_exc] if self._args.restrict_output_to_exc else h
         if self.learning_type == 'RL':
-            h_exc = tf.clip_by_value(h_exc, 0., self._args.max_h_for_output)
+            h_out = tf.clip_by_value(h_out, 0., self._args.max_h_for_output)
 
         policy = Linear(
                     w_policy,
                     trainable=True,
                     bias=True,
-                    name='policy')(h_exc)
+                    name='policy')(h_out)
 
         if self.learning_type == 'RL':
 
@@ -113,7 +112,7 @@ class Model():
                         w_critic,
                         trainable=True,
                         bias=True,
-                        name='crtic')(h_exc)
+                        name='crtic')(h_out)
 
             return tf.keras.models.Model(
                 inputs=[x_input, y_input, h_input, m_input],
@@ -213,10 +212,12 @@ class Model():
     def initialize_output_weights(self):
 
         initializer = tf.keras.initializers.GlorotNormal()
-        w_policy = initializer(shape=(self._args.n_hidden, self._args.n_actions))
-        w_critic = initializer(shape=(self._args.n_hidden, 2))
-        #w_policy = initializer(shape=(self._args.n_exc, self._args.n_actions))
-        #w_critic = initializer(shape=(self._args.n_exc, 2))
+        if self._args.restrict_output_to_exc:
+            w_policy = initializer(shape=(self._args.n_exc, self._args.n_actions))
+            w_critic = initializer(shape=(self._args.n_exc, 2))
+        else:
+            w_policy = initializer(shape=(self._args.n_hidden, self._args.n_actions))
+            w_critic = initializer(shape=(self._args.n_hidden, 2))
 
         return tf.cast(w_policy, tf.float32), tf.cast(w_critic, tf.float32)
 

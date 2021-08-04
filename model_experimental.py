@@ -15,6 +15,7 @@ class Model():
         self.max_weight_value = 5.
         self.top_down_trainable = True if learning_type=='supervised' else False
         self._set_pref_dirs()
+
         self.model = self.create_network()
 
 
@@ -38,7 +39,10 @@ class Model():
         noise_rnn_sd = np.sqrt(2/alpha_soma)*self._args.noise_rnn_sd
 
         x_input = tf.keras.Input((self._args.n_bottom_up,)) # Bottom-up input
-        y_input = tf.keras.Input((self._args.n_top_down,)) # Top-down input
+        if self.learning_type == 'supervised':
+            y_input = tf.keras.Input((self._args.n_top_down,)) # Top-down input
+        else:
+            y_input = tf.keras.Input((self._args.n_top_down_hidden,))
         h_input = tf.keras.Input((self._args.n_hidden,)) # Previous activity
         m_input = tf.keras.Input((self._args.n_hidden,)) # Previous activity
 
@@ -94,10 +98,9 @@ class Model():
         soma_input = bottom_up_current + top_down_current + rec_current * effective_mod + noise
         h = Evolve(alpha_soma, trainable=False, name='alpha_soma')((h_input, soma_input))
         h = tf.nn.relu(h)
-        h_exc = h[..., :self._args.n_exc]
-        #h_exc = h[..., :]
+        h_out = h[..., :self._args.n_exc] if self._args.restrict_output_to_exc else h
         if self.learning_type == 'RL':
-            h_exc = tf.clip_by_value(h_exc, 0., self._args.max_h_for_output)
+            h_out = tf.clip_by_value(h_out, 0., self._args.max_h_for_output)
 
         policy = Linear(
                     w_policy,
@@ -171,28 +174,29 @@ class Model():
         the array'''
         N = self._args.n_bottom_up - self._args.n_motion_tuned
 
+        rnn_phase = np.linspace(0, 2*np.pi, self._args.n_hidden)
+        rnn_phase0 = rnn_phase[np.random.permutation(self._args.n_hidden)]
+        rnn_phase1 = rnn_phase[np.random.permutation(self._args.n_hidden)]
 
         # Trying to add spatial topology here
         if self._args.n_cue_tuned == 2:
             # Two RFs
             motion_phase = np.linspace(0, 2*np.pi, self._args.n_motion_tuned//2)
             motion_phase = np.concatenate((motion_phase, motion_phase), axis=-1)
-            RF_phase = self._args.n_motion_tuned//2 * [0] \
-                + self._args.n_motion_tuned//2 * [2*np.pi/3] \
-                + N * [4*np.pi/3]
+            RF_phase = self._args.n_motion_tuned//2 * [0] + self._args.n_motion_tuned//2 * [np.pi]
+            RF_phase = np.array(RF_phase)
+            print('RF_phase', RF_phase)
+            RF_rnn = np.cos(RF_phase[:, np.newaxis] - rnn_phase1[np.newaxis, :])
+            RF_rnn = np.vstack((RF_rnn, np.zeros((N, self._args.n_hidden))))
+
         elif self._args.n_cue_tuned<=1:
             # One RF
             motion_phase = np.linspace(0, 2*np.pi, self._args.n_motion_tuned)
-            RF_phase = self._args.n_motion_tuned * [0] \
-                + N * [np.pi]
+            RF_rnn =  np.zeros((self._args.n_bottom_up, self._args.n_hidden))
         else:
             assert False, "Not sure how to handle 3 or more cue tuned neurons"
-        RF_phase = np.array(RF_phase)
-        print('RF_phase', RF_phase)
 
-        rnn_phase = np.linspace(0, 2*np.pi, self._args.n_hidden)
-        rnn_phase0 = rnn_phase[np.random.permutation(self._args.n_hidden)]
-        rnn_phase1 = rnn_phase[np.random.permutation(self._args.n_hidden)]
+        print(f"Bottom up and motion tuned {self._args.n_bottom_up} , {self._args.n_motion_tuned}")
 
         td_phase = np.linspace(0, 2*np.pi, self._args.n_top_down_hidden)
         td_phase0 = td_phase[np.random.permutation(self._args.n_top_down_hidden)]
@@ -201,7 +205,7 @@ class Model():
         motion_rnn = np.cos(motion_phase[:, np.newaxis] - rnn_phase0[np.newaxis, :])
         motion_rnn = np.vstack((motion_rnn, np.zeros((N, self._args.n_hidden))))
 
-        RF_rnn = np.cos(RF_phase[:, np.newaxis] - rnn_phase1[np.newaxis, :])
+
 
         self._inp_rnn_phase = 0.5*motion_rnn  + 0.5*RF_rnn
 
@@ -209,6 +213,7 @@ class Model():
             + 0.5*np.cos(rnn_phase1[:, np.newaxis] - rnn_phase1[np.newaxis, :])
         self._td_rnn_phase = 0.5*np.cos(td_phase0[:, np.newaxis] - rnn_phase0[np.newaxis, :]) \
             + 0.5*np.cos(td_phase1[:, np.newaxis] - rnn_phase1[np.newaxis, :])
+
 
 
     def initialize_decay_time_constants(self):
@@ -251,10 +256,12 @@ class Model():
     def initialize_output_weights(self):
 
         initializer = tf.keras.initializers.GlorotNormal()
-        #w_policy = initializer(shape=(self._args.n_hidden, self._args.n_actions))
-        #w_critic = initializer(shape=(self._args.n_hidden, 2))
-        w_policy = initializer(shape=(self._args.n_exc, self._args.n_actions))
-        w_critic = initializer(shape=(self._args.n_exc, 2))
+        if self._args.restrict_output_to_exc:
+            w_policy = initializer(shape=(self._args.n_exc, self._args.n_actions))
+            w_critic = initializer(shape=(self._args.n_exc, 2))
+        else:
+            w_policy = initializer(shape=(self._args.n_hidden, self._args.n_actions))
+            w_critic = initializer(shape=(self._args.n_hidden, 2))
 
         return tf.cast(w_policy, tf.float32), tf.cast(w_critic, tf.float32)
 
