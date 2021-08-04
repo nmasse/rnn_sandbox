@@ -15,7 +15,6 @@ class Model():
         self.max_weight_value = 5.
         self.top_down_trainable = True if learning_type=='supervised' else False
         self._set_pref_dirs()
-
         self.model = self.create_network()
 
 
@@ -64,7 +63,6 @@ class Model():
 
         else:
 
-            print('H', w_top_down1.shape, y_input.shape)
             top_down_current = Linear(
                                 w_top_down1,
                                 trainable=False,
@@ -185,7 +183,6 @@ class Model():
             motion_phase = np.concatenate((motion_phase, motion_phase), axis=-1)
             RF_phase = self._args.n_motion_tuned//2 * [0] + self._args.n_motion_tuned//2 * [np.pi]
             RF_phase = np.array(RF_phase)
-            print('RF_phase', RF_phase)
             RF_rnn = np.cos(RF_phase[:, np.newaxis] - rnn_phase1[np.newaxis, :])
             RF_rnn = np.vstack((RF_rnn, np.zeros((N, self._args.n_hidden))))
 
@@ -304,19 +301,6 @@ class Model():
         beta_IE = self._args.mod_IE_weight / self._args.n_hidden
         beta_II = self._args.mod_II_weight / self._args.n_hidden
 
-        Wee = von_mises(
-                    self._rnn_rnn_phase[:self._args.n_exc, :self._args.n_exc],
-                    self._args.EE_topo_mod)
-        Wei = von_mises(
-                    self._rnn_rnn_phase[self._args.n_exc:, :self._args.n_exc],
-                    self._args.EI_topo_mod)
-        Wie = von_mises(
-                    self._rnn_rnn_phase[:self._args.n_exc, self._args.n_exc:],
-                    self._args.IE_topo_mod)
-        Wii = von_mises(
-                    self._rnn_rnn_phase[self._args.n_exc:, self._args.n_exc:],
-                    self._args.II_topo_mod)
-
         We = np.hstack((beta_EE * Wee, beta_IE * Wie))
         Wi = np.hstack((beta_EI * Wei, beta_II * Wii))
         W = np.vstack((We, Wi))
@@ -371,7 +355,6 @@ class Model():
         w_rnn = np.clip(w_rnn, 0., self.max_weight_value)
 
         return np.float32(w_rnn), np.float32(b_rnn)
-
 
 
 def von_mises(phase, kappa):
