@@ -17,7 +17,7 @@ import time
 
 
 
-gpu_idx = 1
+gpu_idx = 0
 gpus = tf.config.experimental.list_physical_devices('GPU')
 tf.config.experimental.set_visible_devices(gpus[gpu_idx], 'GPU')
 
@@ -42,13 +42,13 @@ parser.add_argument('--normalize_gae', type=bool, default=True)
 parser.add_argument('--normalize_gae_cont', type=bool, default=True)
 parser.add_argument('--critic_coeff', type=float, default=1.)
 parser.add_argument('--entropy_coeff', type=float, default=0.01)
-parser.add_argument('--vae_model_path', type=str, default='saved_models/saved_vae_encoder_space_invaders')
+parser.add_argument('--vae_model_path', type=str, default='saved_models/saved_vae_encoder_space_invaders_v2')
 parser.add_argument('--agent_path', type=str, default='saved_models/SpaceInvadersPPO')
 parser.add_argument('--binarize_states', type=bool, default=True)
 parser.add_argument('--binary_threshold', default = [35])
 parser.add_argument('--hidden_dims', type=int, default=[1024, 1024, 1024, 1024, 1024, 1024])
 parser.add_argument('--cont_action_dim', type=int, default=1024)
-parser.add_argument('--history_save_fn', type=str, default='results/space_invaders_080221.pkl')
+parser.add_argument('--history_save_fn', type=str, default='results/space_invaders_080421.pkl')
 
 parser.add_argument('--start_action_std', type=float, default=0.1)
 parser.add_argument('--end_action_std', type=float, default=0.05)
