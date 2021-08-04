@@ -179,6 +179,7 @@ class Model():
         N = self._args.n_bottom_up - self._args.n_motion_tuned
         self._inp_rnn_phase = np.vstack((self._inp_rnn_phase, np.zeros((N, self._args.n_hidden), dtype = np.float32)))
         self._rnn_rnn_phase = np.cos(rnn_phase[:, np.newaxis] - rnn_phase[np.newaxis, :])
+        self._td_rnn_phase = np.cos(td_phase[:, np.newaxis] - rnn_phase[np.newaxis, :])
 
     def initialize_decay_time_constants(self):
 

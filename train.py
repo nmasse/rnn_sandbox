@@ -90,9 +90,9 @@ class Agent:
 
     def train(self, rnn_params, counter):
 
-        save_fn = os.path.join(self._args.save_path, f"{self.sz}_hidden/", f"{self._args.ablation_mode}", 'results_'+str(uuid.uuid4())+'.pkl')
-        if not os.path.exists(os.path.join(os.path.join(self._args.save_path, f"{self.sz}_hidden/", f"{self._args.ablation_mode}"))):
-            os.makedirs(os.path.join(self._args.save_path, f"{self.sz}_hidden/", f"{self._args.ablation_mode}"))
+        save_fn = os.path.join(self._args.save_path, f"{self.sz}_hidden/", f"{self._args.ablation_mode}", f"{self._args.model_type}", 'results_'+str(uuid.uuid4())+'.pkl')
+        if not os.path.exists(os.path.join(os.path.join(self._args.save_path, f"{self.sz}_hidden/", f"{self._args.ablation_mode}", f"{self._args.model_type}"))):
+            os.makedirs(os.path.join(self._args.save_path, f"{self.sz}_hidden/", f"{self._args.ablation_mode}", f"{self._args.model_type}"))
         results = {
             'args': self._args,
             'rnn_params': rnn_params,
@@ -158,6 +158,8 @@ class Agent:
                 print("Task accuracies " + " | ".join([f"{accuracies[i]:1.3f}" for i in range(self.n_tasks)]))
             results['task_accuracy'].append(accuracies)
             results['loss'].append(loss.numpy())
+            if (j+1) % 50 == 0:
+                results[f'iter_{j + 1}_mean_h'] = np.mean(h.numpy(), axis = (0,2))
 
         h, _ = self.actor.forward_pass(self.dms_batch[0], copy.copy(h_init), copy.copy(m_init))
         results['final_mean_h'] = np.mean(h.numpy(), axis = (0,2))
