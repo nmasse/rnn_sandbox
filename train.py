@@ -23,7 +23,7 @@ parser = argparse.ArgumentParser('')
 parser.add_argument('gpu_idx', type=int)
 parser.add_argument('--n_iterations', type=int, default=400)
 parser.add_argument('--batch_size', type=int, default=256)
-parser.add_argument('--n_stim_batches', type=int, default=200)
+parser.add_argument('--n_stim_batches', type=int, default=400)
 parser.add_argument('--learning_rate', type=float, default=0.01)
 parser.add_argument('--adam_epsilon', type=float, default=1e-7)
 parser.add_argument('--n_learning_rate_ramp', type=int, default=20)
@@ -38,6 +38,8 @@ parser.add_argument('--save_path', type=str, default=f'./results/run_{today.strf
 parser.add_argument('--ablation_mode', type=str, default=None)
 parser.add_argument('--size_range', type=convert, default=[2500])
 parser.add_argument('--restrict_output_to_exc', type=bool, default=False)
+parser.add_argument('--task_set', type=str, default='5tasks')
+parser.add_argument('--model_type', type=str, default='model')
 
 
 args = parser.parse_args()
@@ -54,7 +56,10 @@ class Agent:
         self._rnn_params = rnn_params
         self._param_ranges = param_ranges
 
-        self.tasks = default_tasks()#[:5]
+        # Amend save path 
+        self._args.save_path = os.path.join(self._args.save_path, self._args.task_set + "/")
+
+        self.tasks = default_tasks(self._args.task_set)
         self.n_tasks = len(self.tasks)
         print(f"Training on {self.n_tasks} tasks")
 
@@ -92,15 +97,11 @@ class Agent:
 
     def train(self, rnn_params, counter):
 
-<<<<<<< HEAD
-        save_fn = os.path.join(self._args.save_path, f"{self.sz}_hidden/", 'results_'+str(uuid.uuid4())+'.pkl')
-        save_fn = os.path.join(self._args.save_path, 'results_'+str(uuid.uuid4())+'.pkl')
+        save_fn = os.path.join(self._args.save_path, f"{self.sz}_hidden/", f"{self._args.model_type}", 'results_'+str(uuid.uuid4())+'.pkl')
 
-=======
-        save_fn = os.path.join(self._args.save_path, f"{self.sz}_hidden/", f"{self._args.ablation_mode}", f"{self._args.model_type}", 'results_'+str(uuid.uuid4())+'.pkl')
-        if not os.path.exists(os.path.join(os.path.join(self._args.save_path, f"{self.sz}_hidden/", f"{self._args.ablation_mode}", f"{self._args.model_type}"))):
-            os.makedirs(os.path.join(self._args.save_path, f"{self.sz}_hidden/", f"{self._args.ablation_mode}", f"{self._args.model_type}"))
->>>>>>> 744e5c6033f59ffb6f7d024c27ab1bd8444c7c15
+        if not os.path.exists(os.path.join(self._args.save_path, f"{self.sz}_hidden/", f"{self._args.model_type}")):
+            os.makedirs(os.path.join(self._args.save_path, f"{self.sz}_hidden/", f"{self._args.model_type}"))
+
         results = {
             'args': self._args,
             'rnn_params': rnn_params,
@@ -118,18 +119,14 @@ class Agent:
         print(f"Steady-state activity {results['steady_state_h']:2.4f}")
 
         if results['steady_state_h'] < 0.01 or results['steady_state_h'] > 1.:
-            #pickle.dump(results, open(save_fn, 'wb'))
+            pickle.dump(results, open(save_fn, 'wb'))
             print('Aborting...')
             return False
 
         h, _ = self.actor.forward_pass(self.dms_batch[0], copy.copy(h_init), copy.copy(m_init))
-<<<<<<< HEAD
-        if np.mean(h) > 10.: # just make sure it's not exploding
-            #pickle.dump(results, open(save_fn, 'wb'))
-=======
+
         if np.mean(h) > 10. or not np.isfinite(np.mean(h)): # just make sure it's not exploding
             pickle.dump(results, open(save_fn, 'wb'))
->>>>>>> 744e5c6033f59ffb6f7d024c27ab1bd8444c7c15
             print('Aborting...')
             return False
 
@@ -140,10 +137,6 @@ class Agent:
                             self.sample_decode_time)
         sd = results['sample_decoding']
         print(f"Decoding accuracy {sd[0]:1.3f}, {sd[1]:1.3f}")
-<<<<<<< HEAD
-=======
-
->>>>>>> 744e5c6033f59ffb6f7d024c27ab1bd8444c7c15
 
         print('Calculating average spike rates...')
         results['initial_mean_h'] = np.mean(h.numpy(), axis = (0,2))
