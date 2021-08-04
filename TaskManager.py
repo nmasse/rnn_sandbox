@@ -15,7 +15,7 @@ import matplotlib.pyplot as plt
 
 class TaskGym(gym.Env):
 
-    def __init__(self, task_list, batch_size, rnn_params, buffer_size=1000, new_task_prob=1.):
+    def __init__(self, task_list, batch_size, rnn_params, buffer_size=20000, new_task_prob=1.):
 
         self.n_tasks = len(task_list)
         self.new_task_prob = new_task_prob
@@ -28,7 +28,7 @@ class TaskGym(gym.Env):
                             n_motion_tuned=rnn_params.n_motion_tuned,
                             n_fix_tuned=rnn_params.n_fix_tuned)
         self.n_bottom_up = rnn_params.n_bottom_up
-        self.n_top_down = rnn_params.cont_actor_input_dim
+        self.n_top_down = rnn_params.n_top_down
         self.non_motion_mult = self.task_manager.non_motion_mult
         self.trials_per_task = [self.task_manager.generate_batch(buffer_size, rule=n) for n in range(self.n_tasks)]
         self.task_id = np.random.choice(self.n_tasks, size = (batch_size))
@@ -343,15 +343,17 @@ class TaskManager:
             fix_tuning[self.n_motion_tuned + n, 0] = self.non_motion_mult * self.tuning_height
 
         ###
-        # Generate rule tuning
-        for n in range(self.n_rule_tuned):
-            rule_tuning[self.n_motion_tuned+self.n_fix_tuned+n,n] = self.non_motion_mult * self.tuning_height
-
-        ###
         # Generate cue tuning
         for n in range(self.n_cue_tuned):
-            start = self.n_motion_tuned + self.n_fix_tuned + self.n_rule_tuned
+            start = self.n_motion_tuned + self.n_fix_tuned
             cue_tuning[start + n, n] = self.non_motion_mult * self.tuning_height
+
+        ###
+        # Generate rule tuning
+        for n in range(self.n_rule_tuned):
+            start = self.n_motion_tuned + self.n_fix_tuned + self.n_cue_tuned
+            rule_tuning[start+n,n] = self.non_motion_mult * self.tuning_height
+
 
         # Package together into a dictionary and return
         tuning = {'motion': motion_tuning,
