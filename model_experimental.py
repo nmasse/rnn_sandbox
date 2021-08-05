@@ -104,7 +104,7 @@ class Model():
                     w_policy,
                     trainable=True,
                     bias=True,
-                    name='policy')(h_exc)
+                    name='policy')(h_out)
 
         if self.learning_type == 'RL':
 
@@ -114,7 +114,7 @@ class Model():
                         w_critic,
                         trainable=True,
                         bias=True,
-                        name='crtic')(h_exc)
+                        name='crtic')(h_out)
 
             return tf.keras.models.Model(
                 inputs=[x_input, y_input, h_input, m_input],
