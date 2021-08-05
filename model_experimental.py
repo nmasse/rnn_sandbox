@@ -295,11 +295,15 @@ class Model():
 
     def initialize_modulation_weights(self):
 
-
         beta_EE = self._args.mod_EE_weight / self._args.n_hidden
         beta_EI = self._args.mod_EI_weight / self._args.n_hidden
         beta_IE = self._args.mod_IE_weight / self._args.n_hidden
         beta_II = self._args.mod_II_weight / self._args.n_hidden
+
+        Wee = np.ones((self._args.n_exc, self._args.n_exc))
+        Wei = np.ones((self._args.n_inh, self._args.n_exc))
+        Wie = np.ones((self._args.n_exc, self._args.n_inh))
+        Wii = np.ones((self._args.n_inh, self._args.n_inh))
 
         We = np.hstack((beta_EE * Wee, beta_IE * Wie))
         Wi = np.hstack((beta_EI * Wei, beta_II * Wii))

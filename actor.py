@@ -107,10 +107,6 @@ class ActorSL(BaseActor):
         grads_and_vars = []
         for g, v in zip(grads, self.model.trainable_variables):
             g = tf.clip_by_norm(g, 0.5)
-            #if 'top_down0' in v.name:
-            #    g * 0.1
-
-
             grads_and_vars.append((g,v))
 
         self.opt.learning_rate.assign(learning_rate)
@@ -127,12 +123,11 @@ class ActorRL(BaseActor):
         self._args = args
         self._rnn_params = rnn_params
         if rnn_params is not None:
-            self.RNN = Model(self._rnn_params, learning_type='RL')
+            m = eval(f"{args.model_type}.Model")
+            self.RNN = m(self._rnn_params, learning_type='RL')
             self.model = self.RNN.model
         else:
             self.model = tf.keras.models.load_model(saved_model_path)
-
-        #self.huber_loss = tf.keras.losses.Huber(delta=1.0)
         self.opt = tf.keras.optimizers.Adam(args.learning_rate, epsilon=1e-05)
 
 
@@ -192,8 +187,6 @@ class ActorRL(BaseActor):
 
             entropy_loss = self._args.entropy_coeff * tf.reduce_mean(mask * entropy)
             value_loss = self._args.critic_coeff * 0.5 * tf.reduce_mean(mask * tf.square(tf.stop_gradient(td_targets) - values))
-            #value_loss = self._args.critic_coeff * 0.5 * self.huber_loss(tf.stop_gradient(td_targets), values, sample_weight=mask)
-
             loss = policy_loss + value_loss - entropy_loss
 
 
@@ -232,7 +225,6 @@ class OrnsteinUhlenbeckActionNoise:
     def scroll_forward(self):
         for _ in range(1024):
             self.step()
-
 
     def set_correction_term(self):
         x = []

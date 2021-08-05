@@ -38,10 +38,12 @@ class Model():
         noise_rnn_sd = np.sqrt(2/alpha_soma)*self._args.noise_rnn_sd
 
         x_input = tf.keras.Input((self._args.n_bottom_up,)) # Bottom-up input
-        y_input = tf.keras.Input((self._args.n_top_down,)) # Top-down input
         h_input = tf.keras.Input((self._args.n_hidden,)) # Previous activity
         m_input = tf.keras.Input((self._args.n_hidden,)) # Previous activity
-
+        if self.learning_type == 'supervised':
+            y_input = tf.keras.Input((self._args.n_top_down,)) # Top-down input
+        else:
+            y_input = tf.keras.Input((self._args.n_top_down_hidden,))
 
         if self.learning_type == 'supervised':
 
@@ -266,6 +268,11 @@ class Model():
         beta_EI = self._args.mod_EI_weight / self._args.n_hidden
         beta_IE = self._args.mod_IE_weight / self._args.n_hidden
         beta_II = self._args.mod_II_weight / self._args.n_hidden
+
+        Wee = np.ones((self._args.n_exc, self._args.n_exc))
+        Wei = np.ones((self._args.n_inh, self._args.n_exc))
+        Wie = np.ones((self._args.n_exc, self._args.n_inh))
+        Wii = np.ones((self._args.n_inh, self._args.n_inh))
 
         We = np.hstack((beta_EE * Wee, beta_IE * Wie))
         Wi = np.hstack((beta_EI * Wei, beta_II * Wii))

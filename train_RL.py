@@ -16,7 +16,7 @@ from datetime import datetime
 import uuid
 
 
-gpu_idx = 3
+gpu_idx = 1
 gpus = tf.config.experimental.list_physical_devices('GPU')
 tf.config.experimental.set_visible_devices(gpus[gpu_idx], 'GPU')
 """
@@ -43,7 +43,7 @@ class Agent:
         print(f"Bottom up size {self._rnn_params.n_bottom_up}")
         self._rnn_params.restrict_output_to_exc = args.restrict_output_to_exc
 
-        tasks = default_tasks()
+        tasks = default_tasks(self._args.task_set)
         for task in tasks:
             if 'mask_duration' in task.keys():
                 task['mask_duration'] = 0
@@ -60,7 +60,6 @@ class Agent:
                     new_task_prob=1.)
 
         self.actor = ActorRL(args, self._rnn_params)
-
 
         self.actor_cont = ActorContinuousRL(
                                 self._args,
@@ -289,7 +288,7 @@ def define_dependent_params(args, rnn_params, stim):
 
 
 parser = argparse.ArgumentParser('')
-parser.add_argument('--n_episodes', type=int, default=50000)
+parser.add_argument('--n_episodes', type=int, default=2000)
 parser.add_argument('--time_horizon', type=int, default=128)
 parser.add_argument('--batch_size', type=int, default=256)
 parser.add_argument('--epochs', type=int, default=3)
@@ -305,8 +304,8 @@ parser.add_argument('--clip_grad_norm', type=float, default=1.)
 parser.add_argument('--n_learning_rate_ramp', type=int, default=10)
 parser.add_argument('--save_frs_by_condition', type=bool, default=False)
 parser.add_argument('--training_type', type=str, default='RL')
-parser.add_argument('--rnn_params_fn', type=str, default='./rnn_params/rl_params7.yaml')
-parser.add_argument('--save_path', type=str, default='./results/RL')
+parser.add_argument('--rnn_params_fn', type=str, default='./rnn_params/5tasks/params_acc=0.9587.yaml')
+parser.add_argument('--save_path', type=str, default='./results/RL/5tasks')
 parser.add_argument('--start_action_std', type=float, default=0.1)
 parser.add_argument('--end_action_std', type=float, default=0.1)
 parser.add_argument('--OU_noise', type=bool, default=False)
@@ -317,6 +316,8 @@ parser.add_argument('--action_bound', type=float, default=5)
 parser.add_argument('--cont_action_dim', type=int, default=64)
 parser.add_argument('--disable_cont_action', type=bool, default=False)
 parser.add_argument('--restrict_output_to_exc', type=bool, default=False)
+parser.add_argument('--model_type', type=str, default='model')
+parser.add_argument('--task_set', type=str, default='5tasks')
 
 
 
