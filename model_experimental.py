@@ -12,7 +12,7 @@ class Model():
 
         self._args = args
         self.learning_type = learning_type
-        self.max_weight_value = 5.
+        self.max_weight_value = 2.
         self.top_down_trainable = True if learning_type=='supervised' else False
         self._set_pref_dirs()
         self.model = self.create_network()
@@ -97,8 +97,8 @@ class Model():
         h = Evolve(alpha_soma, trainable=False, name='alpha_soma')((h_input, soma_input))
         h = tf.nn.relu(h)
         h_out = h[..., :self._args.n_exc] if self._args.restrict_output_to_exc else h
-        if self.learning_type == 'RL':
-            h_out = tf.clip_by_value(h_out, 0., self._args.max_h_for_output)
+        #if self.learning_type == 'RL':
+        h_out = tf.clip_by_value(h_out, 0., self._args.max_h_for_output)
 
         policy = Linear(
                     w_policy,
@@ -185,6 +185,7 @@ class Model():
             RF_phase = np.array(RF_phase)
             RF_rnn = np.cos(RF_phase[:, np.newaxis] - rnn_phase1[np.newaxis, :])
             RF_rnn = np.vstack((RF_rnn, np.zeros((N, self._args.n_hidden))))
+            print(self._args.n_motion_tuned, RF_phase)
 
         elif self._args.n_cue_tuned<=1:
             # One RF

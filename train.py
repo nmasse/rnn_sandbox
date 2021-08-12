@@ -21,31 +21,35 @@ def convert(argument):
 
 parser = argparse.ArgumentParser('')
 parser.add_argument('gpu_idx', type=int)
-parser.add_argument('--n_iterations', type=int, default=400)
+parser.add_argument('--n_training_iterations', type=int, default=175)
+parser.add_argument('--n_evaluation_iterations', type=int, default=25)
 parser.add_argument('--batch_size', type=int, default=256)
-parser.add_argument('--n_stim_batches', type=int, default=400)
-parser.add_argument('--learning_rate', type=float, default=0.01)
+parser.add_argument('--n_stim_batches', type=int, default=200)
+parser.add_argument('--learning_rate', type=float, default=0.02)
+parser.add_argument('--top_down_grad_multiplier', type=float, default=0.1)
+parser.add_argument('--clip_grad_norm', type=float, default=1.)
 parser.add_argument('--adam_epsilon', type=float, default=1e-7)
+parser.add_argument('--max_h_for_output', type=float, default=5.)
 parser.add_argument('--n_learning_rate_ramp', type=int, default=20)
 parser.add_argument('--save_frs_by_condition', type=bool, default=False)
-parser.add_argument('--max_h_for_output', type=float, default=999.)
 parser.add_argument('--steady_state_start', type=float, default=1300)
 parser.add_argument('--steady_state_end', type=float, default=1700)
 parser.add_argument('--training_type', type=str, default='supervised')
 parser.add_argument('--rnn_params_fn', type=str, default='./rnn_params/good_params.yaml')
 parser.add_argument('--params_range_fn', type=str, default='./rnn_params/param_ranges.yaml')
-parser.add_argument('--save_path', type=str, default=f'./results/run_{today.strftime("%b-%d-%Y")}/')
+#parser.add_argument('--save_path', type=str, default=f'./results/run_{today.strftime("%b-%d-%Y")}/')
+parser.add_argument('--save_path', type=str, default=f'./results/aug12_low_norm/')
 parser.add_argument('--ablation_mode', type=str, default=None)
 parser.add_argument('--size_range', type=convert, default=[2500])
 parser.add_argument('--restrict_output_to_exc', type=bool, default=False)
-parser.add_argument('--task_set', type=str, default='5tasks')
-parser.add_argument('--model_type', type=str, default='model')
+parser.add_argument('--task_set', type=str, default='7tasks')
+parser.add_argument('--model_type', type=str, default='model_experimental')
 
 
 args = parser.parse_args()
 
 gpus = tf.config.experimental.list_physical_devices('GPU')
-tf.config.experimental.set_memory_growth(gpus[args.gpu_idx], True)
+#tf.config.experimental.set_memory_growth(gpus[args.gpu_idx], True)
 tf.config.experimental.set_visible_devices(gpus[args.gpu_idx], 'GPU')
 
 
@@ -56,7 +60,7 @@ class Agent:
         self._rnn_params = rnn_params
         self._param_ranges = param_ranges
 
-        # Amend save path 
+        # Amend save path
         self._args.save_path = os.path.join(self._args.save_path, self._args.task_set + "/")
 
         self.tasks = default_tasks(self._args.task_set)
@@ -97,10 +101,15 @@ class Agent:
 
     def train(self, rnn_params, counter):
 
+        """
         save_fn = os.path.join(self._args.save_path, f"{self.sz}_hidden/", f"{self._args.model_type}", 'results_'+str(uuid.uuid4())+'.pkl')
-
         if not os.path.exists(os.path.join(self._args.save_path, f"{self.sz}_hidden/", f"{self._args.model_type}")):
             os.makedirs(os.path.join(self._args.save_path, f"{self.sz}_hidden/", f"{self._args.model_type}"))
+        """
+        save_fn = os.path.join(self._args.save_path, 'results_'+str(uuid.uuid4())+'.pkl')
+        if not os.path.exists(self._args.save_path):
+            os.makedirs(self._args.save_path)
+
 
         results = {
             'args': self._args,
@@ -144,14 +153,21 @@ class Agent:
             results['initial_monkey_DMS_data'] = analysis.average_frs_by_condition(h.numpy(),
                 self.dms_batch[-3], self.dms_batch[-1])
 
+        h_std = np.std(np.clip(h.numpy(), 0., self._args.max_h_for_output))
+        print(f'Spike rate standard deviation {h_std:1.4f}')
+
         print('Starting main training loop...')
-        for j in range(self._args.n_iterations):
+        for j in range(self._args.n_training_iterations+self._args.n_evaluation_iterations):
             t0 = time.time()
 
             batch = self.training_batches[j%self._args.n_stim_batches]
-            learning_rate = np.minimum(
-                self._args.learning_rate,
-                j / self._args.n_learning_rate_ramp * self._args.learning_rate)
+            if j >= self._args.n_training_iterations:
+                learning_rate = 0.
+            else:
+                learning_rate = np.minimum(
+                    self._args.learning_rate,
+                    (j+1) / self._args.n_learning_rate_ramp * self._args.learning_rate)
+
 
             loss, h, policy = self.actor.train(batch, copy.copy(h_init), copy.copy(m_init), learning_rate)
 
@@ -162,12 +178,17 @@ class Agent:
                                     np.int32(batch[5]),
                                     np.arange(self.n_tasks))
 
+
             print(f'Iteration {j} Loss {loss:1.4f} Accuracy {np.mean(accuracies):1.3f} Mean activity {np.mean(h):2.4f} Time {time.time()-t0:2.2f}')
-            if (j+1)%10==0:
-                print("Task accuracies " + " | ".join([f"{accuracies[i]:1.3f}" for i in range(self.n_tasks)]))
             results['task_accuracy'].append(accuracies)
             results['loss'].append(loss.numpy())
-            if (j+1) % 50 == 0:
+            if (j+1)%10==0:
+                t = np.maximum(0, j-25)
+                acc = np.stack(results['task_accuracy'],axis=0)
+                acc = np.mean(acc[t:, :], axis=0)
+                print("Task accuracies " + " | ".join([f"{acc[i]:1.3f}" for i in range(self.n_tasks)]))
+
+            if (j+1) % 100 == 0:
                 results[f'iter_{j + 1}_mean_h'] = np.mean(h.numpy(), axis = (0,2))
 
         h, _ = self.actor.forward_pass(self.dms_batch[0], copy.copy(h_init), copy.copy(m_init))
