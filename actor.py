@@ -106,11 +106,14 @@ class ActorSL(BaseActor):
         grads = tape.gradient(loss, self.model.trainable_variables)
         grads_and_vars = []
         for g, v in zip(grads, self.model.trainable_variables):
-            g = tf.clip_by_norm(g, 0.5)
+            g = tf.clip_by_norm(g, self._args.clip_grad_norm)
+            if "top_down" in v.name:
+                g *= self._args.top_down_grad_multiplier
             grads_and_vars.append((g,v))
 
         self.opt.learning_rate.assign(learning_rate)
-        self.opt.apply_gradients(grads_and_vars)
+        if learning_rate > 0:
+            self.opt.apply_gradients(grads_and_vars)
 
         return loss, activity, policy
 
