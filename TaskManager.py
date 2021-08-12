@@ -630,6 +630,8 @@ def default_tasks(task_set):
         task_list = [DMS, DMS_distractor, DMRS180, DMC, DelayGo, ProWM, RetroWM]
     elif task_set == "5tasks":
         task_list = [DMS, DMS_distractor, DMRS180, DMC, DelayGo]
+    elif task_set == "challenge":
+        task_list = [DMS, ABBA, ABCA]
 
     return task_list
 

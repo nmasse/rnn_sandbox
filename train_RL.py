@@ -15,10 +15,46 @@ import time
 from datetime import datetime
 import uuid
 
+parser = argparse.ArgumentParser('')
+parser.add_argument('gpu_idx', type=int)
+parser.add_argument('--n_episodes', type=int, default=2000)
+parser.add_argument('--time_horizon', type=int, default=128)
+parser.add_argument('--batch_size', type=int, default=256)
+parser.add_argument('--epochs', type=int, default=3)
+parser.add_argument('--n_minibatches', type=int, default=4)
+parser.add_argument('--clip_ratio', type=float, default=0.1)
+parser.add_argument('--normalize_gae', type=bool, default=False)
+parser.add_argument('--normalize_gae_cont', type=bool, default=True)
+parser.add_argument('--entropy_coeff', type=float, default=0.002)
+parser.add_argument('--critic_coeff', type=float, default=1.)
+parser.add_argument('--learning_rate', type=float, default=5e-4)
+parser.add_argument('--cont_learning_rate', type=float, default=5e-5)
+parser.add_argument('--clip_grad_norm', type=float, default=1.)
+parser.add_argument('--n_learning_rate_ramp', type=int, default=10)
+parser.add_argument('--save_frs_by_condition', type=bool, default=False)
+parser.add_argument('--training_type', type=str, default='RL')
+parser.add_argument('--rnn_params_fn', type=str, default='./rnn_params/5tasks/params_acc=0.9587.yaml')
+parser.add_argument('--save_path', type=str, default='./results/RL/5tasks')
+parser.add_argument('--start_action_std', type=float, default=0.1)
+parser.add_argument('--end_action_std', type=float, default=0.1)
+parser.add_argument('--OU_noise', type=bool, default=False)
+parser.add_argument('--OU_theta', type=float, default=0.3)
+parser.add_argument('--OU_clip_noise', type=float, default=3.)
+parser.add_argument('--max_h_for_output', type=float, default=25.)
+parser.add_argument('--action_bound', type=float, default=5)
+parser.add_argument('--cont_action_dim', type=int, default=64)
+parser.add_argument('--disable_cont_action', type=bool, default=False)
+parser.add_argument('--restrict_output_to_exc', type=bool, default=False)
+parser.add_argument('--model_type', type=str, default='model')
+parser.add_argument('--task_set', type=str, default='5tasks')
+parser.add_argument('-s', '--save_fn', type=str, default=None)
 
-gpu_idx = 1
+
+
+args = parser.parse_args()
+
 gpus = tf.config.experimental.list_physical_devices('GPU')
-tf.config.experimental.set_visible_devices(gpus[gpu_idx], 'GPU')
+tf.config.experimental.set_visible_devices(gpus[args.gpu_idx], 'GPU')
 """
 tf.config.experimental.set_virtual_device_configuration(
     gpus[gpu_idx],
@@ -39,6 +75,7 @@ class Agent:
         self._rnn_params.noise_rnn_sd = 0.0
         print(f"Setting noise to {self._rnn_params.noise_rnn_sd}")
         self._rnn_params.n_motion_tuned = 32 # This is needed for later dependencies, assuming full 7 tasks with two RFs
+        
         print(f"Setting number of motion tuned to {self._rnn_params.n_motion_tuned}")
         print(f"Bottom up size {self._rnn_params.n_bottom_up}")
         self._rnn_params.restrict_output_to_exc = args.restrict_output_to_exc
@@ -48,16 +85,23 @@ class Agent:
             if 'mask_duration' in task.keys():
                 task['mask_duration'] = 0
 
+        for k, v in vars(self._rnn_params).items():
+            print(k, v)
         self._args.tasks = tasks
         self.n_tasks = len(tasks)
-        print(f'Number of tasks {self.n_tasks}')
 
         self.env = TaskGym(
                     tasks,
                     args.batch_size,
-                    rnn_params,
+                    self._rnn_params,
                     buffer_size=10000,
                     new_task_prob=1.)
+
+        if self._args.task_set == '7tasks':
+            self._rnn_params.n_motion_tuned = 64
+            self._rnn_params.n_bottom_up = 67
+
+        
 
         self.actor = ActorRL(args, self._rnn_params)
 
@@ -102,7 +146,10 @@ class Agent:
 
     def train(self):
 
-        save_fn = os.path.join(self._args.save_path, 'results_'+str(uuid.uuid4())+'.pkl')
+        if self._args.save_fn is not None:
+            save_fn = os.path.join(self._args.save_path, 'results_'+str(uuid.uuid4())+'.pkl')
+        else:
+            save_fn = os.path.join(self._args.save_path, self._args.save_fn)
         results = {
             'args': self._args,
             'rnn_params': rnn_params,
@@ -285,43 +332,6 @@ def define_dependent_params(args, rnn_params, stim):
     return rnn_params
 
 
-
-
-parser = argparse.ArgumentParser('')
-parser.add_argument('--n_episodes', type=int, default=2000)
-parser.add_argument('--time_horizon', type=int, default=128)
-parser.add_argument('--batch_size', type=int, default=256)
-parser.add_argument('--epochs', type=int, default=3)
-parser.add_argument('--n_minibatches', type=int, default=4)
-parser.add_argument('--clip_ratio', type=float, default=0.1)
-parser.add_argument('--normalize_gae', type=bool, default=False)
-parser.add_argument('--normalize_gae_cont', type=bool, default=True)
-parser.add_argument('--entropy_coeff', type=float, default=0.002)
-parser.add_argument('--critic_coeff', type=float, default=1.)
-parser.add_argument('--learning_rate', type=float, default=5e-4)
-parser.add_argument('--cont_learning_rate', type=float, default=5e-5)
-parser.add_argument('--clip_grad_norm', type=float, default=1.)
-parser.add_argument('--n_learning_rate_ramp', type=int, default=10)
-parser.add_argument('--save_frs_by_condition', type=bool, default=False)
-parser.add_argument('--training_type', type=str, default='RL')
-parser.add_argument('--rnn_params_fn', type=str, default='./rnn_params/5tasks/params_acc=0.9587.yaml')
-parser.add_argument('--save_path', type=str, default='./results/RL/5tasks')
-parser.add_argument('--start_action_std', type=float, default=0.1)
-parser.add_argument('--end_action_std', type=float, default=0.1)
-parser.add_argument('--OU_noise', type=bool, default=False)
-parser.add_argument('--OU_theta', type=float, default=0.3)
-parser.add_argument('--OU_clip_noise', type=float, default=3.)
-parser.add_argument('--max_h_for_output', type=float, default=25.)
-parser.add_argument('--action_bound', type=float, default=5)
-parser.add_argument('--cont_action_dim', type=int, default=64)
-parser.add_argument('--disable_cont_action', type=bool, default=False)
-parser.add_argument('--restrict_output_to_exc', type=bool, default=False)
-parser.add_argument('--model_type', type=str, default='model')
-parser.add_argument('--task_set', type=str, default='5tasks')
-
-
-
-args = parser.parse_args()
 
 if not os.path.exists(args.save_path):
     os.makedirs(args.save_path)

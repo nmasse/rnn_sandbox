@@ -38,34 +38,42 @@ def plot_results(data_dir, base_dir = args.base_dir):
     fns = os.listdir(d)
     for fn in fns:
         f = os.path.join(d, fn)
-        if os.path.isdir(f):
+        if os.path.isdir(f) or not f.endswith(".pkl"):
             continue
         x = pickle.load(open(f,'rb'))
 
         if len(x['task_accuracy']) > 0:
-            if len(x['task_accuracy'][-1]) != 7:
-                continue
+            #if len(x['task_accuracy'][-1]) != 7:
+            #    continue
             if len(x['task_accuracy']) != 400:
                 continue
-            if np.mean(x['task_accuracy'][-10:]) > 0.9:
-                print(x['task_accuracy'][-10:])
+            if np.mean(x['task_accuracy'][-10:]) > 0.88:
+                print(np.array(x['task_accuracy'][-2:]).mean(), x['steady_state_h'], np.mean(x['initial_mean_h'][15:]))
                 initial_mean_h.append(x['initial_mean_h'][15:])
                 final_mean_h.append(x['final_mean_h'][15:])
 
-                # Save out params to yaml
-                p = vars(x['rnn_params'])
-                for k, v in p.items():
-                    if type(v) == np.int64:
-                        p[k] = int(v)
-                    if type(v) == str:
-                        p[k] = float(v)
-                with open(f"rnn_params/params_acc={np.array(x['task_accuracy'][-2:]).mean():.4f}.yaml", 'w') as outfile:
-                    yaml.dump(p, outfile,default_flow_style=False)
             task_acc = np.array(x['task_accuracy'])
             min_accuracy.append(np.amin(task_acc[-5:, :].mean(axis=0)))
             mean_accuracy.append(task_acc[-5:, :].mean())
             accuracy.append(np.stack(x['task_accuracy']))
             sample_decoding.append(x['sample_decoding'])
+
+            # Save out params to yaml
+            p = vars(x['rnn_params'])
+            for k, v in p.items():
+                if type(v) == np.int64:
+                    p[k] = int(v)
+                if type(v) == str:
+                    p[k] = float(v)
+            p['filename'] = os.path.basename(f)
+            if np.mean(x['task_accuracy'][-10:]) > 0.88:
+                with open(f"rnn_params/7tasks_high_accuracy_parameters/params_acc={np.array(x['task_accuracy'][-2:]).mean():.4f}.yaml", 'w') as outfile:
+                    yaml.dump(p, outfile,default_flow_style=False)
+
+            # Save all parameters
+            if np.mean(x['task_accuracy'][-10:]) > 0.2:
+                np.savez_compressed(f"/Users/mattrosen/param_data/{fn[:-4]}.npz", params=list(p.values()), keys=list(p.keys()), acc=np.mean(x['task_accuracy'][-10:]))
+
         if np.isfinite(x['steady_state_h']) and x['steady_state_h'] < 1000:
             mean_h.append(x['steady_state_h'])
         else:

@@ -1,5 +1,6 @@
 import sys, os
 sys.path.append('/home/masse/rnn_sandbox')
+sys.path.append('/home/mattrosen/rnn_sandbox')
 import tensorflow as tf
 import argparse
 import numpy as np
@@ -15,13 +16,8 @@ from tensorflow.keras.layers import Conv2D, Dense, Flatten, LayerNormalization
 from collections import deque
 import time
 
-
-
-gpu_idx = 0
-gpus = tf.config.experimental.list_physical_devices('GPU')
-tf.config.experimental.set_visible_devices(gpus[gpu_idx], 'GPU')
-
 parser = argparse.ArgumentParser('')
+parser.add_argument('gpu_idx', type=int)
 #parser.add_argument('--env_name', type=str, default='PongNoFrameskip-v4')
 parser.add_argument('--env_name', type=str, default='SpaceInvadersNoFrameskip-v4')
 
@@ -60,13 +56,15 @@ parser.add_argument('--cont_action_gain', type=float, default=1.)
 parser.add_argument('--initialization', type=str, default='Ortho')
 parser.add_argument('--disable_continuous_action', type=bool, default=False)
 
-args = parser.parse_args('')
+args = parser.parse_args()
+
+gpus = tf.config.experimental.list_physical_devices('GPU')
+tf.config.experimental.set_visible_devices(gpus[args.gpu_idx], 'GPU')
 
 print('Arguments:')
 for k, v in vars(args).items():
     print(k,':', v)
 print()
-
 
 
 class ActorDiscrete:
