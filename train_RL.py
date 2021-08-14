@@ -16,16 +16,16 @@ from datetime import datetime
 import uuid
 
 
-gpu_idx = 1
+gpu_idx = 0
 gpus = tf.config.experimental.list_physical_devices('GPU')
 tf.config.experimental.set_visible_devices(gpus[gpu_idx], 'GPU')
 """
 tf.config.experimental.set_virtual_device_configuration(
     gpus[gpu_idx],
     [tf.config.experimental.VirtualDeviceConfiguration(memory_limit=4800)])
-"""
-#os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
 
+os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
+"""
 class Agent:
     def __init__(self, args, rnn_params):
 
@@ -131,6 +131,12 @@ class Agent:
 
         for ep in range(self._args.n_episodes):
 
+            lr_multiplier = 1.
+            if self._args.n_learning_rate_ramp > 0:
+                lr_multiplier = np.minimum(1, ep / self._args.n_learning_rate_ramp)
+            if self._args.decay_learning_rate:
+                lr_multiplier *= (self._args.n_episodes - ep) / self._args.n_episodes
+
             alpha = np.clip(np.mean(running_epiosde_scores), 0., 1)
 
             actor_cont_std = (1-alpha) * self._args.start_action_std +  alpha * self._args.end_action_std
@@ -146,8 +152,7 @@ class Agent:
             else:
                 dones = [dones[-1]]
 
-            self.actor_cont.OU.scroll_forward()
-
+            #self.actor_cont.OU.scroll_forward()
 
             for t in range(self._args.time_horizon):
                 time_steps += 1
@@ -214,6 +219,17 @@ class Agent:
             td_targets_r = np.reshape(td_targets, (-1, value.shape[-1]))
             masks_r = np.reshape(masks, (-1, 1))
 
+
+            if self._args.normalize_gae:
+                gaes_r[:, 0:1] -= np.mean(gaes_r[:, 0:1],axis=0,keepdims=True)
+                gaes_r[:, 0:1] /= (1e-8 + np.mean(gaes_r[:, 0:1],axis=0,keepdims=True))
+                gaes_r[:, 0:1] = np.clip(gaes_r[:, 0:1], -5., 5.)
+            if self._args.normalize_gae_cont:
+                gaes_r[:, 1:2] -= np.mean(gaes_r[:, 1:2],axis=0,keepdims=True)
+                gaes_r[:, 1:2] /= (1e-8 + np.mean(gaes_r[:, 1:2],axis=0,keepdims=True))
+                gaes_r[:, 1:2] = np.clip(gaes_r[:, 1:2], -5., 5.)
+
+
             N = states_r.shape[0]
             d_norms = []
             c_norms = []
@@ -231,7 +247,8 @@ class Agent:
                         copy.copy(gaes_r[j[0], 0:1]),
                         td_targets_r[j[0], :],
                         old_policies_r[j[0], :],
-                        masks_r[j[0], :])
+                        masks_r[j[0], :],
+                        self._args.learning_rate * lr_multiplier)
                     d_norms.append(np.round(discrete_grad_norm.numpy(),4))
 
                     if epoch == 0:
@@ -241,7 +258,8 @@ class Agent:
                             copy.copy(gaes_r[j[0], 1:2]),
                             cont_old_policies_r[j[0], ...],
                             masks_r[j[0], :],
-                            actor_cont_std)
+                            actor_cont_std,
+                            self._args.cont_learning_rate * lr_multiplier)
                         c_norms.append(np.round(cont_grad_norm.numpy(),4))
 
 
@@ -298,26 +316,27 @@ parser.add_argument('--normalize_gae', type=bool, default=False)
 parser.add_argument('--normalize_gae_cont', type=bool, default=True)
 parser.add_argument('--entropy_coeff', type=float, default=0.002)
 parser.add_argument('--critic_coeff', type=float, default=1.)
-parser.add_argument('--learning_rate', type=float, default=5e-4)
+parser.add_argument('--learning_rate', type=float, default=5e-3)
 parser.add_argument('--cont_learning_rate', type=float, default=5e-5)
+parser.add_argument('--n_learning_rate_ramp', type=int, default=20)
+parser.add_argument('--decay_learning_rate', type=bool, default=True)
 parser.add_argument('--clip_grad_norm', type=float, default=1.)
-parser.add_argument('--n_learning_rate_ramp', type=int, default=10)
 parser.add_argument('--save_frs_by_condition', type=bool, default=False)
 parser.add_argument('--training_type', type=str, default='RL')
-parser.add_argument('--rnn_params_fn', type=str, default='./rnn_params/5tasks/params_acc=0.9587.yaml')
-parser.add_argument('--save_path', type=str, default='./results/RL/5tasks')
+parser.add_argument('--rnn_params_fn', type=str, default='./rnn_params/good_params_aug13b.yaml')
+parser.add_argument('--save_path', type=str, default='./results/RL/7tasks_aug14')
 parser.add_argument('--start_action_std', type=float, default=0.1)
 parser.add_argument('--end_action_std', type=float, default=0.1)
 parser.add_argument('--OU_noise', type=bool, default=False)
 parser.add_argument('--OU_theta', type=float, default=0.3)
 parser.add_argument('--OU_clip_noise', type=float, default=3.)
-parser.add_argument('--max_h_for_output', type=float, default=25.)
+parser.add_argument('--max_h_for_output', type=float, default=5.)
 parser.add_argument('--action_bound', type=float, default=5)
 parser.add_argument('--cont_action_dim', type=int, default=64)
 parser.add_argument('--disable_cont_action', type=bool, default=False)
 parser.add_argument('--restrict_output_to_exc', type=bool, default=False)
-parser.add_argument('--model_type', type=str, default='model')
-parser.add_argument('--task_set', type=str, default='5tasks')
+parser.add_argument('--model_type', type=str, default='model_experimental')
+parser.add_argument('--task_set', type=str, default='7tasks')
 
 
 
@@ -335,4 +354,5 @@ rnn_params = yaml.load(open(args.rnn_params_fn), Loader=yaml.FullLoader)
 
 rnn_params = argparse.Namespace(**rnn_params)
 agent = Agent(args, rnn_params)
-agent.train()
+for _ in range(5):
+    agent.train()

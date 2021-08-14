@@ -132,6 +132,7 @@ class ActorRL(BaseActor):
         else:
             self.model = tf.keras.models.load_model(saved_model_path)
         self.opt = tf.keras.optimizers.Adam(args.learning_rate, epsilon=1e-05)
+        #self.huber = tf.keras.losses.Huber(delta=0.1)
 
 
     def get_actions(self, state):
@@ -165,15 +166,16 @@ class ActorRL(BaseActor):
 
         return surrogate
 
-    def train(self, states, context, h, m, actions, gaes, td_targets, old_policy, mask):
+    def train(self, states, context, h, m, actions, gaes, td_targets, old_policy, mask, learning_rate):
 
         actions = tf.squeeze(tf.cast(actions, tf.int32))
         actions_one_hot = tf.one_hot(actions, self._rnn_params.n_actions)
-
+        """
         if self._args.normalize_gae:
             gaes -= tf.reduce_mean(gaes)
             gaes /= (1e-8 + tf.math.reduce_std(gaes))
             gaes = tf.clip_by_value(gaes, -3, 3.)
+        """
 
         with tf.GradientTape() as tape:
 
@@ -190,13 +192,21 @@ class ActorRL(BaseActor):
 
             entropy_loss = self._args.entropy_coeff * tf.reduce_mean(mask * entropy)
             value_loss = self._args.critic_coeff * 0.5 * tf.reduce_mean(mask * tf.square(tf.stop_gradient(td_targets) - values))
+            """
+            value_loss = self._args.critic_coeff * 0.5 * self.huber(
+                                                            tf.stop_gradient(td_targets),
+                                                            values,
+                                                            sample_weight = mask)
+            """
             loss = policy_loss + value_loss - entropy_loss
 
 
         grads = tape.gradient(loss, self.model.trainable_variables)
         grads, global_norm = tf.clip_by_global_norm(grads, self._args.clip_grad_norm)
-        if not tf.math.is_nan(global_norm):
-            self.opt.apply_gradients(zip(grads, self.model.trainable_variables))
+        self.opt.learning_rate.assign(learning_rate)
+        if learning_rate > 0:
+            if not tf.math.is_nan(global_norm):
+                self.opt.apply_gradients(zip(grads, self.model.trainable_variables))
 
         return loss, value_loss, global_norm
 
@@ -289,16 +299,16 @@ class ActorContinuousRL:
         return surrogate
 
 
-    def train(self, states, actions, gaes, log_old_policy, mask, std):
+    def train(self, states, actions, gaes, log_old_policy, mask, std, learning_rate):
 
         std = tf.cast(std, tf.float32)
         gaes = tf.cast(gaes, tf.float32)
-
+        """
         if self._args.normalize_gae_cont:
             gaes -= tf.reduce_mean(gaes)
             gaes /= (1e-8 + tf.math.reduce_std(gaes))
             gaes = tf.clip_by_value(gaes, -3, 3.)
-
+        """
         with tf.GradientTape() as tape:
             mu = self.model(states, training=True)
             log_new_policy = self.log_pdf(mu, std, actions)
@@ -308,6 +318,8 @@ class ActorContinuousRL:
                 log_old_policy, log_new_policy, actions, gaes))
         grads = tape.gradient(loss, self.model.trainable_variables)
         grads, global_norm = tf.clip_by_global_norm(grads, self._args.clip_grad_norm)
-        if not tf.math.is_nan(global_norm):
-            self.opt.apply_gradients(zip(grads, self.model.trainable_variables))
+        self.opt.learning_rate.assign(learning_rate)
+        if learning_rate > 0:
+            if not tf.math.is_nan(global_norm):
+                self.opt.apply_gradients(zip(grads, self.model.trainable_variables))
         return loss, global_norm
