@@ -17,7 +17,7 @@ import uuid
 
 parser = argparse.ArgumentParser('')
 parser.add_argument('gpu_idx', type=int)
-parser.add_argument('--n_episodes', type=int, default=2000)
+parser.add_argument('--n_episodes', type=int, default=1500)
 parser.add_argument('--time_horizon', type=int, default=128)
 parser.add_argument('--batch_size', type=int, default=256)
 parser.add_argument('--epochs', type=int, default=3)
@@ -27,26 +27,27 @@ parser.add_argument('--normalize_gae', type=bool, default=False)
 parser.add_argument('--normalize_gae_cont', type=bool, default=True)
 parser.add_argument('--entropy_coeff', type=float, default=0.002)
 parser.add_argument('--critic_coeff', type=float, default=1.)
-parser.add_argument('--learning_rate', type=float, default=5e-4)
-parser.add_argument('--cont_learning_rate', type=float, default=5e-5)
-parser.add_argument('--clip_grad_norm', type=float, default=1.)
+parser.add_argument('--learning_rate', type=float, default=5e-3)#5e-4
+parser.add_argument('--cont_learning_rate', type=float, default=1e-5)#5e-5
+parser.add_argument('--clip_grad_norm', type=float, default=1.0)
 parser.add_argument('--n_learning_rate_ramp', type=int, default=10)
 parser.add_argument('--save_frs_by_condition', type=bool, default=False)
 parser.add_argument('--training_type', type=str, default='RL')
-parser.add_argument('--rnn_params_fn', type=str, default='./rnn_params/5tasks/params_acc=0.9587.yaml')
-parser.add_argument('--save_path', type=str, default='./results/RL/5tasks')
+parser.add_argument('--rnn_params_path', type=str, default='./rnn_params/stringent_params/')
+parser.add_argument('--rnn_params_fn', type=str, default='full_1.yaml')
+parser.add_argument('--save_path', type=str, default='./results/RL/7tasks_higher_lrs/')
 parser.add_argument('--start_action_std', type=float, default=0.1)
 parser.add_argument('--end_action_std', type=float, default=0.1)
 parser.add_argument('--OU_noise', type=bool, default=False)
 parser.add_argument('--OU_theta', type=float, default=0.3)
 parser.add_argument('--OU_clip_noise', type=float, default=3.)
-parser.add_argument('--max_h_for_output', type=float, default=25.)
+parser.add_argument('--max_h_for_output', type=float, default=5.)#25
 parser.add_argument('--action_bound', type=float, default=5)
 parser.add_argument('--cont_action_dim', type=int, default=64)
 parser.add_argument('--disable_cont_action', type=bool, default=False)
 parser.add_argument('--restrict_output_to_exc', type=bool, default=False)
-parser.add_argument('--model_type', type=str, default='model')
-parser.add_argument('--task_set', type=str, default='5tasks')
+parser.add_argument('--model_type', type=str, default='model_experimental')
+parser.add_argument('--task_set', type=str, default='7tasks')
 parser.add_argument('-s', '--save_fn', type=str, default=None)
 
 
@@ -146,7 +147,7 @@ class Agent:
 
     def train(self):
 
-        if self._args.save_fn is not None:
+        if self._args.save_fn is None:
             save_fn = os.path.join(self._args.save_path, 'results_'+str(uuid.uuid4())+'.pkl')
         else:
             save_fn = os.path.join(self._args.save_path, self._args.save_fn)
@@ -341,7 +342,7 @@ for k, v in vars(args).items():
     print(k,':', v)
 print()
 
-rnn_params = yaml.load(open(args.rnn_params_fn), Loader=yaml.FullLoader)
+rnn_params = yaml.load(open(os.path.join(args.rnn_params_path, args.rnn_params_fn)), Loader=yaml.FullLoader)
 
 rnn_params = argparse.Namespace(**rnn_params)
 agent = Agent(args, rnn_params)

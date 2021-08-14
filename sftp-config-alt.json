@@ -14,12 +14,12 @@
     "confirm_sync": true,
     "confirm_overwrite_newer": false,
     
-    "host": "bizon",
-    "user": "freedmanlab",
+    "host": "turnip",
+    "user": "mattrosen",
     //"password": "password",
     //"port": "22",
     
-    "remote_path": "/home/freedmanlab/rnn_sandbox/",
+    "remote_path": "/home/mattrosen/rnn_sandbox/",
     "ignore_regexes": [
         "\\.sublime-(project|workspace)", "sftp-config(-alt\\d?)?\\.json",
         "sftp-settings\\.json", "/venv/", "\\.svn/", "\\.hg/", "\\.git/",

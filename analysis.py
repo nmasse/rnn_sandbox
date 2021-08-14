@@ -33,12 +33,12 @@ def decode_signal(X, y, timesteps, k_folds=4):
 
     return np.mean(svm_acc, axis=-1)
 
-def accuracy_SL_all_tasks(policy, labels, mask, rule, possible_rules):
+def accuracy_SL_all_tasks(policy, labels, mask, rule, possible_rules, continue_resets=[]):
 
     accuracies = []
     for i in possible_rules:
         idx = np.where(rule == i)[0]
-        acc = accuracy_RL_like(policy[idx, ...], labels[idx, ...], mask[idx, ...])
+        acc = accuracy_RL_like(policy[idx, ...], labels[idx, ...], mask[idx, ...], continue_resets)
         accuracies.append(acc)
 
     return accuracies
@@ -59,7 +59,7 @@ def accuracy_SL(policy, labels, mask):
 
     return np.sum(task_mask * (labels_amax == policy_amax)) / np.sum(task_mask)
 
-def accuracy_RL_like(policy, labels, mask):
+def accuracy_RL_like(policy, labels, mask, continue_resets=[]):
 
     labels_amax = np.argmax(labels,axis=-1)
     policy_amax = np.argmax(policy,axis=-1)
@@ -69,13 +69,16 @@ def accuracy_RL_like(policy, labels, mask):
     trial_continues = np.ones((batch_size), dtype=np.float32)
     correct_time = np.zeros_like(mask)
     for t in range(trial_length):
+        # Check to see if we've started a new test period; if so, reset trial_continues
+        if t in continue_resets:
+            trial_continues = np.ones((batch_size), dtype=np.float32)
         correct_resp = trial_continues * np.float32(labels_amax[:,t] == policy_amax[:,t]) * resp_period[:, t]
         correct += mask[:,t] * correct_resp
         s =  mask[:,t] * correct_resp
         correct_time[:, t] = mask[:,t] * correct_resp
         trial_continues *= (1 - mask[:,t] * np.float32(policy_amax[:,t] > 0))
 
-    return np.mean(correct)
+    return np.mean(correct) / max(1, len(continue_resets) + 1) # Make sure to normalize
 
 def average_frs_by_condition(h, sample, test):
     # H: B x T x N

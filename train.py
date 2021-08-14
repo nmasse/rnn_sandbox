@@ -81,8 +81,8 @@ class Agent:
             n_fix_tuned=self._rnn_params.n_fix_tuned,
             batch_size=args.batch_size, input_noise = noise_std, tf2=False)
 
-        rnn_params = define_dependent_params(rnn_params, stim)
-        self.actor = ActorSL(args, rnn_params, learning_type='supervised')
+        self.rnn_params = define_dependent_params(self._rnn_params, stim)
+        self.actor = ActorSL(args, self._rnn_params, learning_type='supervised')
 
         self.training_batches = [stim.generate_batch(args.batch_size, to_exclude=[]) for _ in range(args.n_stim_batches)]
         self.dms_batch = stim.generate_batch(args.batch_size, rule=0, include_test=True)
@@ -101,11 +101,6 @@ class Agent:
 
     def train(self, rnn_params, counter):
 
-        """
-        save_fn = os.path.join(self._args.save_path, f"{self.sz}_hidden/", f"{self._args.model_type}", 'results_'+str(uuid.uuid4())+'.pkl')
-        if not os.path.exists(os.path.join(self._args.save_path, f"{self.sz}_hidden/", f"{self._args.model_type}")):
-            os.makedirs(os.path.join(self._args.save_path, f"{self.sz}_hidden/", f"{self._args.model_type}"))
-        """
         save_fn = os.path.join(self._args.save_path, 'results_'+str(uuid.uuid4())+'.pkl')
         if not os.path.exists(self._args.save_path):
             os.makedirs(self._args.save_path)

@@ -19,18 +19,21 @@ def convert(argument):
 
 parser = argparse.ArgumentParser('')
 parser.add_argument('gpu_idx', type=int)
-parser.add_argument('--n_iterations', type=int, default=400)
+parser.add_argument('--n_training_iterations', type=int, default=175)
+parser.add_argument('--n_evaluation_iterations', type=int, default=25)
 parser.add_argument('--batch_size', type=int, default=256)
-parser.add_argument('--n_stim_batches', type=int, default=400)
-parser.add_argument('--learning_rate', type=float, default=0.01)
+parser.add_argument('--n_stim_batches', type=int, default=200)
+parser.add_argument('--learning_rate', type=float, default=0.02)
 parser.add_argument('--adam_epsilon', type=float, default=1e-7)
+parser.add_argument('--clip_grad_norm', type=float, default=1.)
+parser.add_argument('--top_down_grad_multiplier', type=float, default=0.1)
 parser.add_argument('--n_learning_rate_ramp', type=int, default=20)
 parser.add_argument('--rnn_params_fn', type=str, default='./rnn_params/good_params.yaml')
-parser.add_argument('--params_folder', type=str, default='./rnn_params/7tasks_high_accuracy_parameters/')
+parser.add_argument('--params_folder', type=str, default='./rnn_params/stringent_params/')
 parser.add_argument('--training_type', type=str, default='supervised')
 parser.add_argument('--save_path', type=str, default='results/reliability_assessment')
 parser.add_argument('--save_frs_by_condition', type=bool, default=False)
-parser.add_argument('--max_h_for_output', type=float, default=999.)
+parser.add_argument('--max_h_for_output', type=float, default=5.)
 parser.add_argument('--steady_state_start', type=float, default=1300)
 parser.add_argument('--steady_state_end', type=float, default=1700)
 parser.add_argument('--task_set', type=str, default='7tasks')
@@ -84,6 +87,7 @@ class Agent:
             print(v.name, v.shape)
 
         print(self.actor.model.summary())
+        self._args.n_iterations = self._args.n_training_iterations + self._args.n_evaluation_iterations
 
 
     def train(self, rnn_params, n_networks, save_fn, original_task_accuracy=None):
@@ -137,9 +141,12 @@ class Agent:
                 t0 = time.time()
 
                 batch = self.training_batches[j%self._args.n_stim_batches]
-                learning_rate = np.minimum(
-                    self._args.learning_rate,
-                    j / self._args.n_learning_rate_ramp * self._args.learning_rate)
+                if j >= self._args.n_training_iterations:
+                    learning_rate = 0.
+                else:
+                    learning_rate = np.minimum(
+                        self._args.learning_rate,
+                        (j+1) / self._args.n_learning_rate_ramp * self._args.learning_rate)
 
                 loss, h, policy = self.actor.train(batch, copy.copy(h_init), copy.copy(m_init), learning_rate)
 
@@ -150,9 +157,17 @@ class Agent:
                                         np.int32(batch[5]),
                                         np.arange(self.n_tasks))
 
-                print(f'Iteration {j} Loss {loss:1.4f} Accuracy {np.mean(accuracies):1.3f} Mean activity {np.mean(h):2.4f} Time {time.time()-t0:2.2f}')
                 tr_acc[j, :] = accuracies
                 tr_loss[j]   = loss.numpy()
+                print(f'Iteration {j} Loss {loss:1.4f} Accuracy {np.mean(accuracies):1.3f} Mean activity {np.mean(h):2.4f} Time {time.time()-t0:2.2f}')
+                if (j+1)%10==0:
+                    t = np.maximum(0, j-25)
+                    acc = np.stack(tr_acc[:j],axis=0)
+                    acc = np.mean(acc[t:, :], axis=0)
+                    print("Task accuracies " + " | ".join([f"{acc[i]:1.3f}" for i in range(self.n_tasks)]))
+
+                if (j+1) % 100 == 0:
+                    results[f'iter_{j + 1}_mean_h'] = np.mean(h.numpy(), axis = (0,2))
 
             # Add the necessary elements to the results that we record
             results['loss'].append(tr_loss)
@@ -193,11 +208,12 @@ class ParameterReliabilityAssessor:
             mean_accuracy = os.path.basename(params_fn)
             start = mean_accuracy.find("acc=")+4
             end = start + 6
-            mean_accuracy = float(mean_accuracy[start:end])
+            try:
+                mean_accuracy = float(mean_accuracy[start:end])
+            except ValueError:
+                mean_accuracy = None
 
-            #if os.path.isfile(save_fn):
-            #    print('File already exists. Skipping.')
-            #    continue
+
 
             rnn_params = yaml.load(open(args.rnn_params_fn), Loader=yaml.FullLoader)
             rnn_params = argparse.Namespace(**rnn_params)

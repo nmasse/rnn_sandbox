@@ -3,6 +3,7 @@ import numpy as np
 import os
 from tensorflow.keras.layers import Dense
 import model, model_experimental
+import tensorflow_addons as tfa
 
 
 class BaseActor:
@@ -131,7 +132,8 @@ class ActorRL(BaseActor):
             self.model = self.RNN.model
         else:
             self.model = tf.keras.models.load_model(saved_model_path)
-        self.opt = tf.keras.optimizers.Adam(args.learning_rate, epsilon=1e-05)
+
+        self.opt = tf.keras.optimizers.Adam(args.learning_rate, beta_1=0.9, beta_2=0.99, epsilon=1e-05)
 
 
     def get_actions(self, state):

@@ -19,18 +19,21 @@ def convert(argument):
 
 parser = argparse.ArgumentParser('')
 parser.add_argument('gpu_idx', type=int)
-parser.add_argument('--n_iterations', type=int, default=400)
+parser.add_argument('--n_training_iterations', type=int, default=175)
+parser.add_argument('--n_evaluation_iterations', type=int, default=25)
 parser.add_argument('--batch_size', type=int, default=128)
-parser.add_argument('--n_stim_batches', type=int, default=400)
-parser.add_argument('--learning_rate', type=float, default=0.01)
+parser.add_argument('--n_stim_batches', type=int, default=200)
+parser.add_argument('--learning_rate', type=float, default=0.02)
 parser.add_argument('--adam_epsilon', type=float, default=1e-7)
 parser.add_argument('--n_learning_rate_ramp', type=int, default=20)
+parser.add_argument('--top_down_grad_multiplier', type=float, default=0.1)
+parser.add_argument('--clip_grad_norm', type=float, default=1.)
 parser.add_argument('--rnn_params_fn', type=str, default='./rnn_params/good_params.yaml')
-parser.add_argument('--params_folder', type=str, default='./rnn_params/7tasks_high_accuracy_parameters/')
+parser.add_argument('--params_folder', type=str, default='./rnn_params/stringent_params/')
 parser.add_argument('--training_type', type=str, default='supervised')
 parser.add_argument('--save_path', type=str, default='results/generalizability_assessment')
 parser.add_argument('--save_frs_by_condition', type=bool, default=False)
-parser.add_argument('--max_h_for_output', type=float, default=999.)
+parser.add_argument('--max_h_for_output', type=float, default=5.)
 parser.add_argument('--steady_state_start', type=float, default=1300)
 parser.add_argument('--steady_state_end', type=float, default=1700)
 parser.add_argument('--task_set', type=str, default='challenge')
@@ -48,22 +51,33 @@ class Agent:
         self._args = args
         self._rnn_params = rnn_params
 
+        tasks = default_tasks(args.task_set)
+        self.n_tasks = len(tasks)
+        self.tasks = tasks
+
         # Define E/I number based on argument
         self._rnn_params.n_exc = int(0.8 * sz)
         self._rnn_params.n_inh = int(0.2 * sz)
         self._rnn_params.restrict_output_to_exc = args.restrict_output_to_exc
         self.sz = sz
+        self._rnn_params.n_motion_tuned = 32
 
-        tasks = default_tasks(args.task_set)
-        self.n_tasks = len(tasks)
-        stim = TaskManager(tasks, batch_size=args.batch_size, tf2=False)
 
-        rnn_params = define_dependent_params(rnn_params, stim)
-        self.actor = ActorSL(args, rnn_params, learning_type='supervised')
+        alpha = rnn_params.dt / rnn_params.tc_soma
+        noise_std = np.sqrt(2/alpha) * rnn_params.noise_input_sd
+        stim = TaskManager(
+            self.tasks,
+            n_motion_tuned=self._rnn_params.n_motion_tuned,
+            n_fix_tuned=self._rnn_params.n_fix_tuned,
+            batch_size=args.batch_size, input_noise = noise_std, tf2=False)
+
+        rnn_params = define_dependent_params(self._rnn_params, stim)
+        self.actor = ActorSL(self._args, self._rnn_params, learning_type='supervised')
 
         self.training_batches = [stim.generate_batch(args.batch_size, to_exclude=[0]) for _ in range(args.n_stim_batches)]
         self.dms_batch = stim.generate_batch(args.batch_size, rule=0, include_test=True)
         self.sample_decode_time = [(300+200+300+500)//rnn_params.dt, (300+200+300+980)//rnn_params.dt]
+        self.continue_resets = [1800//rnn_params.dt, 2600//rnn_params.dt]
 
         print('Trainable variables...')
         for v in self.actor.model.trainable_variables:
@@ -74,6 +88,7 @@ class Agent:
             print(v.name, v.shape)
 
         print(self.actor.model.summary())
+        self._args.n_iterations = self._args.n_training_iterations + self._args.n_evaluation_iterations
 
 
     def train(self, rnn_params, n_networks, save_fn, original_task_accuracy=None):
@@ -82,8 +97,6 @@ class Agent:
         # the results for all networks with the same parameter set
         sample_decoding = []
         save_fn = os.path.join(self._args.save_path, os.path.splitext(save_fn)[0] + ".pkl")
-        if os.path.exists(save_fn):
-            return
 
         results = {
             'args': self._args,
@@ -124,9 +137,12 @@ class Agent:
                 t0 = time.time()
 
                 batch = self.training_batches[j%self._args.n_stim_batches]
-                learning_rate = np.minimum(
-                    self._args.learning_rate,
-                    j / self._args.n_learning_rate_ramp * self._args.learning_rate)
+                if j >= self._args.n_training_iterations:
+                    learning_rate = 0.
+                else:
+                    learning_rate = np.minimum(
+                        self._args.learning_rate,
+                        (j+1) / self._args.n_learning_rate_ramp * self._args.learning_rate)
 
                 loss, h, policy = self.actor.train(batch, copy.copy(h_init), copy.copy(m_init), learning_rate)
 
@@ -135,11 +151,20 @@ class Agent:
                                         np.float32(batch[1]), # desired_output
                                         np.float32(batch[2]), # train_mask
                                         np.int32(batch[5]),   # rule
-                                        np.arange(1, self.n_tasks))
+                                        np.arange(1, self.n_tasks),
+                                        continue_resets=self.continue_resets)
 
-                print(f'Iteration {j} Loss {loss:1.4f} Accuracy {np.mean(accuracies):1.3f} Mean activity {np.mean(h):2.4f} Time {time.time()-t0:2.2f}')
+                print(f'Iteration {j} Loss {loss:1.4f} Accuracy {np.around(accuracies, 2)} Mean activity {np.mean(h):2.4f} Time {time.time()-t0:2.2f}')
                 tr_acc[j, :] = accuracies
                 tr_loss[j]   = loss.numpy()
+                if (j+1)%10==0:
+                    t = np.maximum(0, j-25)
+                    acc = np.stack(tr_acc[:j],axis=0)
+                    acc = np.mean(acc[t:, :], axis=0)
+                    print("Task accuracies " + " | ".join([f"{acc[i]:1.3f}" for i in range(self.n_tasks - 1)]))
+
+                if (j+1) % 100 == 0:
+                    results[f'iter_{j + 1}_mean_h'] = np.mean(h.numpy(), axis = (0,2))
 
             # Add the necessary elements to the results that we record
             results['loss'].append(tr_loss)
@@ -171,33 +196,23 @@ class ParameterGeneralizabilityAssessor:
 
             # Check if file already exists in save directory
             save_fn = os.path.join(self._args.save_path, os.path.basename(params_fn))
+            if os.path.exists(save_fn[:-5] + ".pkl"):
+                continue
+            pickle.dump({}, open(save_fn[:-5]+".pkl", 'wb'))
 
             mean_accuracy = os.path.basename(params_fn)
             start = mean_accuracy.find("acc=")+4
             end = start + 6
-            mean_accuracy = float(mean_accuracy[start:end])
+            try:
+                mean_accuracy = float(mean_accuracy[start:end])
+            except ValueError:
+                mean_accuracy = None
 
-            if os.path.isfile(save_fn):
-                print('File already exists. Skipping.')
-                continue
 
             rnn_params = yaml.load(open(args.rnn_params_fn), Loader=yaml.FullLoader)
             rnn_params = argparse.Namespace(**rnn_params)
 
-            if self.search_results:
-                results = pickle.load(open(params_fn, 'rb'))
-                if len(results['task_accuracy']) == 0:
-                    print('Aborting')
-                    continue
-                accuracy = np.stack(results['task_accuracy'])
-                mean_accuracy = np.mean(accuracy[-10:, :])
-                print(f'Mean accuracy {mean_accuracy}')
-                if mean_accuracy < 0.8:
-                    print('Aborting')
-                    continue
-                p = vars(results['rnn_params'])
-            else:
-                p = yaml.load(open(params_fn), Loader=yaml.FullLoader)
+            p = yaml.load(open(params_fn), Loader=yaml.FullLoader)
             for k, v in p.items():
                 if hasattr(rnn_params, k):
                     setattr(rnn_params, k, v)
@@ -210,12 +225,14 @@ class ParameterGeneralizabilityAssessor:
 
 def define_dependent_params(params, stim):
 
-    params.n_input     = stim.n_input
-    params.n_actions   = stim.n_output
-    params.n_hidden    = params.n_exc + params.n_inh
-    params.n_bottom_up = stim.n_motion_tuned +  stim.n_rule_tuned + stim.n_cue_tuned + stim.n_fix_tuned
+    params.n_actions = stim.n_output
+    params.n_hidden = params.n_exc + params.n_inh
+    params.n_bottom_up = stim.n_motion_tuned  + stim.n_fix_tuned + stim.n_cue_tuned
     params.n_motion_tuned = stim.n_motion_tuned
-    params.n_top_down  = stim.n_rule_tuned + stim.n_cue_tuned + stim.n_fix_tuned
+    params.n_cue_tuned = stim.n_cue_tuned
+    params.n_fix_tuned = stim.n_fix_tuned
+    params.n_top_down = stim.n_rule_tuned + stim.n_cue_tuned + stim.n_fix_tuned
+    params.max_h_for_output = args.max_h_for_output
 
     return params
 
@@ -232,4 +249,4 @@ print()
 # Make ParameterGeneralizabilityAssessor() object and test all param sets in folder
 ################################################################################
 pa = ParameterGeneralizabilityAssessor(args, search_results=False)
-pa.assess_generalizability(1)
+pa.assess_generalizability(5)
