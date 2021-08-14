@@ -152,7 +152,7 @@ class Agent:
             else:
                 dones = [dones[-1]]
 
-            #self.actor_cont.OU.scroll_forward()
+            self.actor_cont.OU.scroll_forward()
 
             for t in range(self._args.time_horizon):
                 time_steps += 1
@@ -313,7 +313,7 @@ parser.add_argument('--epochs', type=int, default=3)
 parser.add_argument('--n_minibatches', type=int, default=4)
 parser.add_argument('--clip_ratio', type=float, default=0.1)
 parser.add_argument('--normalize_gae', type=bool, default=False)
-parser.add_argument('--normalize_gae_cont', type=bool, default=True)
+parser.add_argument('--normalize_gae_cont', type=bool, default=False)
 parser.add_argument('--entropy_coeff', type=float, default=0.002)
 parser.add_argument('--critic_coeff', type=float, default=1.)
 parser.add_argument('--learning_rate', type=float, default=5e-3)
@@ -325,10 +325,10 @@ parser.add_argument('--save_frs_by_condition', type=bool, default=False)
 parser.add_argument('--training_type', type=str, default='RL')
 parser.add_argument('--rnn_params_fn', type=str, default='./rnn_params/good_params_aug13b.yaml')
 parser.add_argument('--save_path', type=str, default='./results/RL/7tasks_aug14')
-parser.add_argument('--start_action_std', type=float, default=0.1)
-parser.add_argument('--end_action_std', type=float, default=0.1)
-parser.add_argument('--OU_noise', type=bool, default=False)
-parser.add_argument('--OU_theta', type=float, default=0.3)
+parser.add_argument('--start_action_std', type=float, default=0.05)
+parser.add_argument('--end_action_std', type=float, default=0.05)
+parser.add_argument('--OU_noise', type=bool, default=True)
+parser.add_argument('--OU_theta', type=float, default=0.15)
 parser.add_argument('--OU_clip_noise', type=float, default=3.)
 parser.add_argument('--max_h_for_output', type=float, default=5.)
 parser.add_argument('--action_bound', type=float, default=5)
