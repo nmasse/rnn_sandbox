@@ -289,6 +289,7 @@ class ActorContinuousRL:
 
 
     def create_model(self):
+        #init = tf.keras.initializers.Orthogonal(gain=0.01)
         state_input = tf.keras.Input((self.state_dim,))
         mu_output = Dense(self.action_dim, activation='linear', use_bias=True)(state_input)
         return tf.keras.models.Model(state_input, mu_output)

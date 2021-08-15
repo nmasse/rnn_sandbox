@@ -17,6 +17,8 @@ import uuid
 
 parser = argparse.ArgumentParser('')
 parser.add_argument('gpu_idx', type=int)
+parser.add_argument('--n_training_episodes', type=int, default=2000)
+parser.add_argument('--n_evaluation_episodes', type=int, default=50)
 parser.add_argument('--n_episodes', type=int, default=2000)
 parser.add_argument('--time_horizon', type=int, default=128)
 parser.add_argument('--batch_size', type=int, default=256)
@@ -47,6 +49,7 @@ parser.add_argument('--action_bound', type=float, default=5)
 parser.add_argument('--cont_action_dim', type=int, default=64)
 parser.add_argument('--disable_cont_action', type=bool, default=False)
 parser.add_argument('--restrict_output_to_exc', type=bool, default=False)
+parser.add_argument('--cont_action_multiplier', type=float, default=1.0)
 parser.add_argument('--model_type', type=str, default='model_experimental')
 parser.add_argument('--task_set', type=str, default='7tasks')
 parser.add_argument('-s', '--save_fn', type=str, default=None)
@@ -57,6 +60,7 @@ args = parser.parse_args()
 
 gpus = tf.config.experimental.list_physical_devices('GPU')
 tf.config.experimental.set_visible_devices(gpus[args.gpu_idx], 'GPU')
+
 
 class Agent:
     def __init__(self, args, rnn_params):
@@ -172,24 +176,22 @@ class Agent:
             running_epiosde_times = np.zeros((self.n_tasks))
             last_mean_h = 0.
 
-            reset_run = False
 
+            for ep in range(self._args.n_training_episodes+self._args.n_evaluation_episodes):
 
-            for ep in range(self._args.n_episodes):
-
-                if reset_run:
-                    break
-
-                lr_multiplier = 1.
-                if self._args.n_learning_rate_ramp > 0:
-                    lr_multiplier = np.minimum(1, ep / self._args.n_learning_rate_ramp)
-                if self._args.decay_learning_rate:
-                    lr_multiplier *= (self._args.n_episodes - ep) / self._args.n_episodes
-
-                alpha = np.clip(np.mean(running_epiosde_scores), 0., 1)
-
-                actor_cont_std = (1-alpha) * self._args.start_action_std +  alpha * self._args.end_action_std
+                if ep < self._args.n_training_episodes:
+                    #alpha = np.clip(np.mean(running_epiosde_scores), 0., 1)
+                    actor_cont_std = self._args.start_action_std
+                    lr_multiplier = 1.
+                    if self._args.n_learning_rate_ramp > 0:
+                        lr_multiplier = np.minimum(1, ep / self._args.n_learning_rate_ramp)
+                    if self._args.decay_learning_rate:
+                        lr_multiplier *= (self._args.n_training_episodes - ep) / self._args.n_training_episodes
+                else:
+                    lr_multiplier = 0.
+                    actor_cont_std = 1e-9
                 actor_cont_std = np.float32(actor_cont_std)
+
                 states, actions, values , rewards, old_policies = [], [], [], [], []
                 cont_states, cont_actions, cont_old_policies = [], [], []
 
@@ -201,7 +203,7 @@ class Agent:
                 else:
                     dones = [dones[-1]]
 
-                self.actor_cont.OU.scroll_forward()
+                #self.actor_cont.OU.scroll_forward()
 
                 for t in range(self._args.time_horizon):
                     time_steps += 1
@@ -209,7 +211,8 @@ class Agent:
                     current_task_id = self.env.task_id
 
                     cont_log_policy, cont_action = self.actor_cont.get_actions(cont_state, actor_cont_std)
-                    next_h, next_m, log_policy, action, value = self.actor.get_actions([state, cont_action, h, m])
+                    cont_act = self._args.cont_action_multiplier*cont_action
+                    next_h, next_m, log_policy, action, value = self.actor.get_actions([state, cont_act, h, m])
                     next_state, next_cont_state, next_mask, reward, done = self.env.step_all(action)
                     episode_reward += reward
 
@@ -323,8 +326,8 @@ class Agent:
                 s = "Task scores " + " | ".join([f"{running_epiosde_scores[i]:1.3f}" for i in range(self.n_tasks)])
                 s += f" | Overal: {np.mean(running_epiosde_scores):1.3f}"
                 print(s)
-                
-                if np.mean(h_exc) > 0.09 and ep < 30:
+
+                if np.mean(h_exc) > 0.15:
                     self.actor.reset_optimizer()
                     reset_run = True
                     break
@@ -332,9 +335,6 @@ class Agent:
                 if ep%10==0:
                     pickle.dump(results, open(save_fn,'wb'))
             return
-
-
-
 
 
 def define_dependent_params(args, rnn_params, stim):
@@ -356,6 +356,7 @@ def define_dependent_params(args, rnn_params, stim):
     return rnn_params
 
 
+
 if not os.path.exists(args.save_path):
     os.makedirs(args.save_path)
 
@@ -368,5 +369,5 @@ rnn_params = yaml.load(open(os.path.join(args.rnn_params_path, args.rnn_params_f
 
 rnn_params = argparse.Namespace(**rnn_params)
 agent = Agent(args, rnn_params)
-for _ in range(5):
+for _ in range(1):
     agent.train()
