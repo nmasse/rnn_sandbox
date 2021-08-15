@@ -16,7 +16,7 @@ from datetime import datetime
 import uuid
 
 
-gpu_idx = 1
+gpu_idx = 0
 gpus = tf.config.experimental.list_physical_devices('GPU')
 tf.config.experimental.set_visible_devices(gpus[gpu_idx], 'GPU')
 
@@ -125,14 +125,15 @@ class Agent:
 
         for ep in range(self._args.n_training_episodes+self._args.n_evaluation_episodes):
 
+            train_remain = (self._args.n_training_episodes - ep) / self._args.n_training_episodes
+
             if ep < self._args.n_training_episodes:
-                #alpha = np.clip(np.mean(running_epiosde_scores), 0., 1)
-                actor_cont_std = self._args.start_action_std
+                actor_cont_std = train_remain * self._args.start_action_std + (1 - train_remain) * self._args.end_action_std
                 lr_multiplier = 1.
                 if self._args.n_learning_rate_ramp > 0:
                     lr_multiplier = np.minimum(1, ep / self._args.n_learning_rate_ramp)
                 if self._args.decay_learning_rate:
-                    lr_multiplier *= (self._args.n_training_episodes - ep) / self._args.n_training_episodes
+                    lr_multiplier *= train_remain
             else:
                 lr_multiplier = 0.
                 actor_cont_std = 1e-9
@@ -149,7 +150,8 @@ class Agent:
             else:
                 dones = [dones[-1]]
 
-            #self.actor_cont.OU.scroll_forward()
+            if self._args.OU_noise:
+                self.actor_cont.OU.scroll_forward()
 
             for t in range(self._args.time_horizon):
                 time_steps += 1
@@ -322,10 +324,10 @@ parser.add_argument('--decay_learning_rate', type=bool, default=True)
 parser.add_argument('--clip_grad_norm', type=float, default=1.)
 parser.add_argument('--save_frs_by_condition', type=bool, default=False)
 parser.add_argument('--training_type', type=str, default='RL')
-parser.add_argument('--rnn_params_fn', type=str, default='./rnn_params/good_params_aug13b.yaml')
+parser.add_argument('--rnn_params_fn', type=str, default='./rnn_params/good_params_aug13d.yaml')
 parser.add_argument('--save_path', type=str, default='./results/RL/7tasks_aug14')
-parser.add_argument('--start_action_std', type=float, default=0.05)
-parser.add_argument('--end_action_std', type=float, default=0.05)
+parser.add_argument('--start_action_std', type=float, default=0.1)
+parser.add_argument('--end_action_std', type=float, default=0.01)
 parser.add_argument('--cont_action_multiplier', type=float, default=1.)
 parser.add_argument('--OU_noise', type=bool, default=False)
 parser.add_argument('--OU_theta', type=float, default=0.15)
