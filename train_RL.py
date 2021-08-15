@@ -16,16 +16,10 @@ from datetime import datetime
 import uuid
 
 
-gpu_idx = 0
+gpu_idx = 1
 gpus = tf.config.experimental.list_physical_devices('GPU')
 tf.config.experimental.set_visible_devices(gpus[gpu_idx], 'GPU')
-"""
-tf.config.experimental.set_virtual_device_configuration(
-    gpus[gpu_idx],
-    [tf.config.experimental.VirtualDeviceConfiguration(memory_limit=4800)])
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
-"""
 class Agent:
     def __init__(self, args, rnn_params):
 
@@ -129,18 +123,21 @@ class Agent:
         last_mean_h = 0.
 
 
-        for ep in range(self._args.n_episodes):
+        for ep in range(self._args.n_training_episodes+self._args.n_evaluation_episodes):
 
-            lr_multiplier = 1.
-            if self._args.n_learning_rate_ramp > 0:
-                lr_multiplier = np.minimum(1, ep / self._args.n_learning_rate_ramp)
-            if self._args.decay_learning_rate:
-                lr_multiplier *= (self._args.n_episodes - ep) / self._args.n_episodes
-
-            alpha = np.clip(np.mean(running_epiosde_scores), 0., 1)
-
-            actor_cont_std = (1-alpha) * self._args.start_action_std +  alpha * self._args.end_action_std
+            if ep < self._args.n_training_episodes:
+                #alpha = np.clip(np.mean(running_epiosde_scores), 0., 1)
+                actor_cont_std = self._args.start_action_std
+                lr_multiplier = 1.
+                if self._args.n_learning_rate_ramp > 0:
+                    lr_multiplier = np.minimum(1, ep / self._args.n_learning_rate_ramp)
+                if self._args.decay_learning_rate:
+                    lr_multiplier *= (self._args.n_training_episodes - ep) / self._args.n_training_episodes
+            else:
+                lr_multiplier = 0.
+                actor_cont_std = 1e-9
             actor_cont_std = np.float32(actor_cont_std)
+
             states, actions, values , rewards, old_policies = [], [], [], [], []
             cont_states, cont_actions, cont_old_policies = [], [], []
 
@@ -152,7 +149,7 @@ class Agent:
             else:
                 dones = [dones[-1]]
 
-            self.actor_cont.OU.scroll_forward()
+            #self.actor_cont.OU.scroll_forward()
 
             for t in range(self._args.time_horizon):
                 time_steps += 1
@@ -160,7 +157,8 @@ class Agent:
                 current_task_id = self.env.task_id
 
                 cont_log_policy, cont_action = self.actor_cont.get_actions(cont_state, actor_cont_std)
-                next_h, next_m, log_policy, action, value = self.actor.get_actions([state, cont_action, h, m])
+                cont_act = self._args.cont_action_multiplier*cont_action
+                next_h, next_m, log_policy, action, value = self.actor.get_actions([state, cont_act, h, m])
                 next_state, next_cont_state, next_mask, reward, done = self.env.step_all(action)
                 episode_reward += reward
 
@@ -306,7 +304,8 @@ def define_dependent_params(args, rnn_params, stim):
 
 
 parser = argparse.ArgumentParser('')
-parser.add_argument('--n_episodes', type=int, default=2000)
+parser.add_argument('--n_training_episodes', type=int, default=2000)
+parser.add_argument('--n_evaluation_episodes', type=int, default=50)
 parser.add_argument('--time_horizon', type=int, default=128)
 parser.add_argument('--batch_size', type=int, default=256)
 parser.add_argument('--epochs', type=int, default=3)
@@ -327,7 +326,8 @@ parser.add_argument('--rnn_params_fn', type=str, default='./rnn_params/good_para
 parser.add_argument('--save_path', type=str, default='./results/RL/7tasks_aug14')
 parser.add_argument('--start_action_std', type=float, default=0.05)
 parser.add_argument('--end_action_std', type=float, default=0.05)
-parser.add_argument('--OU_noise', type=bool, default=True)
+parser.add_argument('--cont_action_multiplier', type=float, default=1.)
+parser.add_argument('--OU_noise', type=bool, default=False)
 parser.add_argument('--OU_theta', type=float, default=0.15)
 parser.add_argument('--OU_clip_noise', type=float, default=3.)
 parser.add_argument('--max_h_for_output', type=float, default=5.)
@@ -354,5 +354,5 @@ rnn_params = yaml.load(open(args.rnn_params_fn), Loader=yaml.FullLoader)
 
 rnn_params = argparse.Namespace(**rnn_params)
 agent = Agent(args, rnn_params)
-for _ in range(5):
+for _ in range(1):
     agent.train()
