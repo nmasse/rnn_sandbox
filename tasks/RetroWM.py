@@ -34,14 +34,14 @@ class RetroWM(Task.Task):
 
             # Establish task timings
             fix_bounds      = [0, (self.dead_time + self.fix_time)]
-            rule_bounds     = [0, self.trial_length]
+            rule_bounds     = [self.rule_start_time, self.rule_end_time]
             sample_bounds   = [fix_bounds[-1], fix_bounds[-1] + self.sample_time]
             delay_bounds    = [sample_bounds[-1], sample_bounds[-1] + self.delay_time]
             test_bounds     = [delay_bounds[-1], delay_bounds[-1] + self.test_time]
             response_bounds = test_bounds
 
             mid_delay = delay_bounds[0] + self.delay_time // 2
-            cue_bounds = [mid_delay, self.trial_length]
+            cue_bounds = [mid_delay, delay_bounds[-1]]#self.trial_length]
 
             # Set mask at critical periods
             trial_info['train_mask'][i, test_bounds[0]:test_bounds[0]+self.mask_duration] = 0
@@ -55,12 +55,13 @@ class RetroWM(Task.Task):
                 sample_inputs.append(np.reshape(self.motion_tuning[:, k, s_k],(1,-1)))
             sample_input = np.sum(np.stack(sample_inputs), axis=0)
 
+
             fix_input  = int(self.n_fix_tuned > 0) * np.reshape(self.fix_tuning[:,0],(1,-1))
             rule_input = int(self.n_rule_tuned > 0) * np.reshape(self.rule_tuning[:,self.rule_id],(1,-1))
             cue_input  = int(self.n_cue_tuned > 0) * np.reshape(self.cue_tuning[:,test_cue],(1,-1))
-            trial_info['neural_input'][i, range(*sample_bounds), :]    += sample_input
+            trial_info['neural_input'][i, range(*sample_bounds), :]    += sample_input 
             trial_info['neural_input'][i, range(0, test_bounds[0]), :] += fix_input
-            trial_info['neural_input'][i, range(*rule_bounds), :]      += rule_input
+            trial_info['neural_input'][i, range(*rule_bounds), :]      += rule_input 
             trial_info['neural_input'][i, range(*cue_bounds), :]       += cue_input
 
             if self.categorization:

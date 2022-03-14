@@ -42,6 +42,8 @@ class Task(object):
         self.var_delay_max        = misc['var_delay_max'] // dt
         self.mask_duration        = misc['mask_duration'] // dt
         self.trial_length         = misc['trial_length'] // dt
+        self.rule_start_time      = 0
+        self.rule_end_time        = self.trial_length
 
         # Bind RL info
         self.fix_break_penalty     = misc['fix_break_penalty']

@@ -39,7 +39,7 @@ class ProRetroWM(Task.Task):
 
             # Establish task timings
             fix_bounds      = [0, (self.dead_time + self.fix_time)]
-            rule_bounds     = [0, self.trial_length]
+            rule_bounds     = [0, self.rule_end_time]
             sample_bounds   = [fix_bounds[-1], fix_bounds[-1] + self.sample_time]
             delay_bounds    = [sample_bounds[-1], sample_bounds[-1] + self.delay_time]
             test_bounds     = [delay_bounds[-1], delay_bounds[-1] + self.test_time]

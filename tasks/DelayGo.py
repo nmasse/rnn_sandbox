@@ -41,7 +41,7 @@ class DelayGo(Task.Task):
 
             # Establish task epoch bounds (test period = go period in this task)
             fix_bounds      = [0, (self.dead_time + self.fix_time)]
-            rule_bounds     = [0, self.trial_length]
+            rule_bounds     = [self.rule_start_time, self.rule_end_time]
             sample_bounds   = [fix_bounds[-1], fix_bounds[-1] + self.sample_time]
             delay_bounds    = [sample_bounds[-1], sample_bounds[-1] + total_delay]
             test_bounds     = [delay_bounds[-1], delay_bounds[-1] + total_test]

@@ -75,7 +75,7 @@ class DMRS(Task.Task):
             dist_end   = total_delay//2 + self.sample_time//2
 
             fix_bounds      = [0, (self.dead_time + self.fix_time)]
-            rule_bounds     = [0, self.trial_length]
+            rule_bounds     = [self.rule_start_time, self.rule_end_time]
             sample_bounds   = [fix_bounds[-1], fix_bounds[-1] + self.sample_time]
             delay_bounds    = [sample_bounds[-1], sample_bounds[-1] + total_delay]
             test_bounds     = [delay_bounds[-1], delay_bounds[-1] + total_test]
@@ -98,6 +98,7 @@ class DMRS(Task.Task):
             trial_info['neural_input'][i, range(*test_bounds), :]   += test_input
             trial_info['neural_input'][i, range(0, test_bounds[0]), :] += fix_input
             trial_info['neural_input'][i, range(*rule_bounds), :]   += rule_input
+
 
             if self.distractor:
                 trial_info['neural_input'][i, range(*dist_bounds), :]  += dist_input

@@ -7,7 +7,7 @@ class DMC(Task.Task):
 
         # Initialize from superclass Task
         super().__init__(task_name, rule_id, var_delay, dt, tuning, timing, shape, misc)
-        self.same_RF  = same_RF
+        self.same_RF = same_RF
         self.possible_RFs = possible_RFs if possible_RFs is not None else list(range(self.n_motion_dirs))
 
     def _get_trial_info(self, batch_size):
@@ -60,7 +60,7 @@ class DMC(Task.Task):
                 total_test -= (total_delay - self.delay_time)
 
             fix_bounds      = [0, (self.dead_time + self.fix_time)]
-            rule_bounds     = [0, self.trial_length]
+            rule_bounds     = [self.rule_start_time, self.rule_end_time]
             sample_bounds   = [fix_bounds[-1], fix_bounds[-1] + self.sample_time]
             delay_bounds    = [sample_bounds[-1], sample_bounds[-1] + total_delay]
             test_bounds     = [delay_bounds[-1], delay_bounds[-1] + total_test]
@@ -77,10 +77,11 @@ class DMC(Task.Task):
             test_input   = int(catch == 0) * np.reshape(self.motion_tuning[:, test_RF, test_dir],(1,-1))
             fix_input    = int(self.n_fix_tuned > 0) * np.reshape(self.fix_tuning[:,0],(-1,1)).T
             rule_input   = int(self.n_rule_tuned > 0) * np.reshape(self.rule_tuning[:,self.rule_id],(1,-1))
-            trial_info['neural_input'][i, range(*sample_bounds), :] += sample_input
+            trial_info['neural_input'][i, range(*sample_bounds), :] += sample_input 
             trial_info['neural_input'][i, range(*test_bounds), :]   += test_input
             trial_info['neural_input'][i, range(0, test_bounds[0]), :] += fix_input
-            trial_info['neural_input'][i, range(*rule_bounds), :]   += rule_input
+            trial_info['neural_input'][i, range(*rule_bounds), :]   += rule_input 
+
 
             # Generate outputs
             trial_info['desired_output'][i, range(0, test_bounds[0]), 0] = 1.
