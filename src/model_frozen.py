@@ -3,20 +3,15 @@ import copy
 from itertools import product
 import tensorflow as tf
 import matplotlib.pyplot as plt
-from .layers import Linear, Recurrent, Evolve
+from .layers_frozen import Linear, Recurrent, Evolve
 from . import util
 
 class Model():
 
-    def __init__(self, args, learning_type='supervised', n_RFs=2, training_alg='BPTT'):
+    def __init__(self, args, n_RFs=2, **kwargs):
         self._args = args
         self.n_RFs = n_RFs
-        self.learning_type = learning_type
-        self.training_alg  = training_alg
         self.max_weight_value = 2.
-        self.top_down_trainable = (learning_type == "supervised") \
-            and self._args.top_down_trainable
-        self.readout_trainable = self._args.readout_trainable
         self._set_pref_dirs()
         self.model = self.create_network()
 
@@ -25,8 +20,8 @@ class Model():
 
         ######################################################################## 
         # Set up for generating weight matrices (establish E/I identity, etc.)
-        self.EI_list = [1. for i in range(self._args.n_exc)] + \
-            [-1. for i in range(self._args.n_inh)]
+        self.EI_list = np.array([1. for i in range(self._args.n_exc)] + \
+            [-1. for i in range(self._args.n_inh)]).astype(np.float32)
 
         self.EI_matrix = tf.linalg.diag(tf.constant(self.EI_list))
         self.mask = tf.ones_like(self.EI_matrix) - \
@@ -37,8 +32,7 @@ class Model():
         ws = {}
         ws['w_bottom_up'] = self.initialize_bottom_up_weights()
         ws['w_policy'], ws['w_critic'] = self.initialize_output_weights()
-        ws['w_top_down0'], ws['w_top_down1'] = \
-            self.initialize_top_down_weights(ws['w_policy'])
+        ws['w_top_down1'] = self.initialize_top_down_weights()
         ws['w_rnn'], ws['b_rnn'] = self.initialize_recurrent_weights()
         ws['w_mod'] = self.initialize_modulation_weights()
         ws['alpha_soma'], ws['alpha_modulator'] = \
@@ -53,50 +47,24 @@ class Model():
         x_input = tf.keras.Input((self._args.n_bottom_up,)) # Bottom-up input
         h_input = tf.keras.Input((self._args.n_hidden,)) # Prev. activity
         m_input = tf.keras.Input((self._args.n_hidden,)) # Prev. activity mod.
-
-        ######################################################################## 
-        # 2. Handle top-down input differently for RL vs. SL settings
-        if self.learning_type == 'supervised':
-            y_input = tf.keras.Input((self._args.n_top_down,)) # Top-down input
-            top_down_hidden = Linear(
-                                ws['w_top_down0'],
-                                trainable=self.top_down_trainable,
-                                name='top_down0')(y_input)
-
-            if self._args.nonlinear_top_down:
-                top_down_hidden = tf.nn.relu(top_down_hidden)
-
-            top_down_current = Linear(
-                                ws['w_top_down1'],
-                                trainable=False,
-                                name='top_down1')(top_down_hidden)
-        else:
-            y_input = tf.keras.Input((self._args.n_top_down_hidden,))
-            top_down_current = Linear(
-                                ws['w_top_down1'],
-                                trainable=False,
-                                name='top_down1')(y_input)
+        y_input = tf.keras.Input((self._args.n_hidden,)) # Top-down input
             
         ########################################################################    
-        # 3. Define currents that neurons receive (bottom-up, recurrent, 
+        # 2. Define currents that neurons receive (bottom-up, recurrent, 
         # modulatory)
         bottom_up_current = Linear(
                             ws['w_bottom_up'],
-                            trainable=False,
                             name='bottom_up')(x_input)
-
 
         rec_current = Recurrent(
                         ws['w_rnn'],
                         ws['b_rnn'],
                         self.mask,
                         self.EI_matrix,
-                        trainable=False,
                         name='rnn')(h_input)
 
         modulation = Linear(
                         ws['w_mod'],
-                        trainable=False,
                         name='modulation')(h_input)
 
         ######################################################################## 
@@ -115,58 +83,30 @@ class Model():
         # 6. Integrate all of these current sources (top-down, bottom-up, 
         # recurrent, modulatory, noise) at soma, and apply nonlinearity
         soma_input = bottom_up_current + rec_current * effective_mod + noise \
-            + top_down_current
+            + y_input
         h = Evolve(ws['alpha_soma'], trainable=False,
             name='alpha_soma')((h_input, soma_input))
         h = tf.nn.relu(h)
-        #if self.learning_type == 'RL':
-        #    h = tf.clip_by_value(h, 0., 5.)
         h_out = h[..., :self._args.n_exc] if self._args.restrict_output_to_exc \
             else h
-
 
         ######################################################################## 
         # 7. Generate network output (linear fxn of hidden activity vector)
         policy = Linear(
                     ws['w_policy'],
-                    trainable=self.readout_trainable,
                     bias=True,
                     name='policy')(h_out)
 
+
         ######################################################################## 
         # 8. Return different model types for RL vs. SL
-        if self.learning_type == 'RL':
-
-            policy = tf.nn.softmax(policy, axis=-1)
-
-            critic = Linear(
-                        ws['w_critic'],
-                        trainable=True,
-                        bias=True,
-                        name='crtic')(h_out)
-
-            return tf.keras.models.Model(
-                inputs=[x_input, y_input, h_input, m_input],
-                outputs=[h, modulator, policy, critic])
-
-        elif self.learning_type == 'supervised':
-
-            # If supervised + training via backprop
-            if "DNI" in self.training_alg:
-                return tf.keras.models.Model(
-                    inputs=[x_input, y_input, h_input, m_input],
-                    outputs=[h, soma_input, modulator, policy, 
-                        top_down_hidden, top_down_current])
-            else:
-                return tf.keras.models.Model(
-                    inputs=[x_input, y_input, h_input, m_input],
-                    outputs=[h, modulator, policy])
-
+        return tf.keras.models.Model(
+            inputs=[x_input, y_input, h_input, m_input],
+            outputs=[h, modulator, policy])
 
         return None
 
     def create_network(self):
-
         ws    = self.initialize_weights()
         model = self.define_model_logic(ws)
         return model
@@ -182,10 +122,11 @@ class Model():
         w_bottom_up = self.initialize_bottom_up_weights()
 
         w_policy, w_critic = self.initialize_output_weights()
-        w_top_down0, w_top_down1 = self.initialize_top_down_weights(w_policy)
+        w_top_down1 = self.initialize_top_down_weights()
         
         w_rnn, b_rnn = self.initialize_recurrent_weights()
         w_mod = self.initialize_modulation_weights()
+
         alpha_soma, alpha_modulator = self.initialize_decay_time_constants()
         b_pol = np.float32(np.zeros((1,self._args.n_actions)))
         b_pol[:,0] = 1.
@@ -194,8 +135,7 @@ class Model():
                           'bottom_up_w:0' : w_bottom_up,
                           'rnn_w:0'       : w_rnn, 
                           'rnn_b:0'       : b_rnn, 
-                          'top_down0_w:0' : w_top_down0,
-                          'top_down1_w:0' : w_top_down1, 
+                          'w_top_down1:0' : w_top_down1,  
                           'policy_w:0'    : w_policy, 
                           'policy_b:0'    : b_pol,
                           'critic_w:0'    : w_critic, 
@@ -289,20 +229,25 @@ class Model():
         alpha_modulator = np.clip(self._args.dt/self._args.tc_modulator, 0, 1.)
         return np.float32(alpha_soma), np.float32(alpha_modulator)
 
+    def initialize_output_weights(self):
+        # Initialize weights to outputs.
 
-    def initialize_top_down_weights(self, w_policy):
-        # Initialize top-down weights.
-
-        # 1. Weights for learnable top-down projection
         initializer = tf.keras.initializers.GlorotNormal()
-        if self._args.top_down_overlapping:
-            w0_temp = initializer(shape=(1, self._args.n_top_down_hidden))
-            w0 = tf.tile(w0_temp, [self._args.n_top_down, 1])
+        if self._args.restrict_output_to_exc:
+            w_policy = initializer(shape=(self._args.n_exc,
+                self._args.n_actions))
+            w_critic = initializer(shape=(self._args.n_exc, 2))
         else:
-            w0 = initializer(shape=(self._args.n_top_down, 
-                self._args.n_top_down_hidden))
+            w_policy = initializer(shape=(self._args.n_hidden, 
+                self._args.n_actions))
+            w_critic = initializer(shape=(self._args.n_hidden, 2))
+
+        return tf.cast(w_policy, tf.float32), tf.cast(w_critic, tf.float32)
+
+    def initialize_top_down_weights(self):
+        # Initialize top-down weights.
         
-        # 2. Weights for fixed top-down projection
+        # Weights for fixed top-down projection
         We = np.random.gamma(
                         self._args.td_E_kappa,
                         1.,
@@ -325,23 +270,7 @@ class Model():
         w1 = np.clip(w1, 0., self.max_weight_value)
         w1[:, 1::2] = 0.
 
-        return tf.cast(w0, tf.float32), tf.cast(w1, tf.float32)
-
-    def initialize_output_weights(self):
-        # Initialize weights to outputs.
-
-        initializer = tf.keras.initializers.GlorotNormal()
-        if self._args.restrict_output_to_exc:
-            w_policy = initializer(shape=(self._args.n_exc,
-                self._args.n_actions))
-            w_critic = initializer(shape=(self._args.n_exc, 2))
-        else:
-            w_policy = initializer(shape=(self._args.n_hidden, 
-                self._args.n_actions))
-            w_critic = initializer(shape=(self._args.n_hidden, 2))
-
-        return tf.cast(w_policy, tf.float32), tf.cast(w_critic, tf.float32)
-
+        return tf.cast(w1, tf.float32)
 
     def initialize_bottom_up_weights(self):
 

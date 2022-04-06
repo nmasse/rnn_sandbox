@@ -5,7 +5,7 @@ import os
 import yaml
 import glob
 from src import util
-from src.agent import Agent
+from src.frozenagent import FrozenAgent
 
 parser = argparse.ArgumentParser('')
 parser.add_argument('--gpu_idx', type=int, default=0)
@@ -78,8 +78,8 @@ if __name__ == "__main__":
         for k, v in p.items():
             if hasattr(rnn_params, k):
                 setattr(rnn_params, k, v)
-        agent = Agent(args, rnn_params)
-        agent.train(
+        agent = FrozenAgent(args, rnn_params)
+        agent.train_frozen(
             rnn_params,
             args.n_networks,
             os.path.basename(params_fn),

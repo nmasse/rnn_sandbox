@@ -14,7 +14,7 @@ import matplotlib.pyplot as plt
 def decode_signal(X, y, timesteps, k_folds=4):
 
     ''' Set up decoder, x-validate via k folds'''
-    svm = SVC(C=1.0, kernel='linear', max_iter=1000, decision_function_shape='ovr', 
+    svm = SVC(C=1.0, kernel='linear', max_iter=200, decision_function_shape='ovr', 
         shrinking=False, tol=1e-3)
     if y.ndim < 2:
         y = y[:, np.newaxis]

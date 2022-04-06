@@ -15,7 +15,8 @@ from . import analysis
 from .actor import ActorSL
 from tasks.TaskManager import TaskManager, default_tasks
 
-tf.keras.backend.set_floatx('float32')
+#tf.keras.backend.set_floatx('float32')
+
 np.set_printoptions(precision=3)
 
 class Agent:
@@ -24,6 +25,8 @@ class Agent:
         # Select GPU
         gpus = tf.config.experimental.list_physical_devices('GPU')
         tf.config.experimental.set_visible_devices(gpus[args.gpu_idx], 'GPU')
+        for gpu in gpus:
+            tf.config.experimental.set_memory_growth(gpu,True)
 
         self._args = args
         self._rnn_params = rnn_params
@@ -55,11 +58,17 @@ class Agent:
         self.actor = ActorSL(args, self.rnn_params, learning_type='supervised',
             n_RFs=2)
 
-        self.training_batches = [stim.generate_batch(args.batch_size, to_exclude=[]) \
-            for _ in range(args.n_stim_batches)]
-        self.eval_batch = stim.generate_batch(args.batch_size, rule=0, include_test=True)
+        # Define training batches
+        if self._args.model_type == 'model_frozen':
+            self.training_batches = [[stim.generate_batch(args.batch_size, to_exclude=[], rule=j) \
+                for _ in range(args.n_stim_batches)] for j in range(self.n_tasks)]
+        else:
+            self.training_batches = [stim.generate_batch(args.batch_size, to_exclude=[]) \
+                for _ in range(args.n_stim_batches)]
+
+        self.eval_batch = [stim.generate_batch(args.batch_size, rule=0, include_test=True) for _ in range(2)]
         self.sample_decode_time = [(300+200+300+500)//rnn_params.dt, # mid delay
-            (300+200+300+980)//rnn_params.dt] # late delay
+            (300+200+300+1030)//rnn_params.dt] # late delay: Should be +980
 
         self._args.n_iterations = self._args.n_training_iterations + \
             self._args.n_evaluation_iterations
@@ -107,13 +116,16 @@ class Agent:
         }
 
 
-        self.actor.RNN.generate_new_weights(rnn_params)
+        self.actor.RNN.generate_new_weights(rnn_params, int(time.time()))
 
 
         ########################################################################
         # Determine baseline states
         ########################################################################
-        h_init, m_init, h = self.actor.determine_steady_state(self.training_batches[0][0])
+        if self._args.model_type == 'model_experimental_stsp':
+            h_init, m_init, h, syn_x, syn_u = self.actor.determine_steady_state(self.training_batches[0][0])
+        else:
+            h_init, m_init, h = self.actor.determine_steady_state(self.training_batches[0][0])
         results['steady_state_h'] = np.mean(h_init)
         print(f"Steady-state activity {results['steady_state_h']:2.4f}")
 
@@ -122,34 +134,51 @@ class Agent:
             pickle.dump(results, open(save_fn, 'wb'))
             return False
 
-        h, _ = self.actor.forward_pass(self.eval_batch[0], 
-            copy.copy(h_init), copy.copy(m_init))
+        if self._args.model_type == 'model_experimental_stsp':
+            h, _, _, _ = self.actor.forward_pass(self.eval_batch[0][0], 
+                copy.copy(h_init), copy.copy(m_init), 
+                copy.copy(syn_x), copy.copy(syn_u))
+        else:
+            h, _ = self.actor.forward_pass(self.eval_batch[0][0], 
+                copy.copy(h_init), copy.copy(m_init))
 
         if np.mean(h) > 10. or not np.isfinite(np.mean(h)): # just make sure it's not exploding
             pickle.dump(results, open(save_fn, 'wb'))
             print('Aborting...')
             return False
 
+        # Run remaining batches for decoding
+        hs = [h.numpy()]
+        for i in range(1, len(self.eval_batch)):
+            if self._args.model_type == 'model_experimental_stsp':
+                h, _, _, _ = self.actor.forward_pass(self.eval_batch[i][0],
+                    copy.copy(h_init), copy.copy(m_init),
+                    copy.copy(syn_x), copy.copy(syn_u))
+            else:
+                h, _ = self.actor.forward_pass(self.eval_batch[i][0],
+                    copy.copy(h_init), copy.copy(m_init))
+            hs.append(h.numpy())
+
+        h = np.concatenate(hs)
+        s = np.int32(np.concatenate([e[4] for e in self.eval_batch]))
+
         print('Determing initial sample decoding accuracy...')
+        print(h.shape, s.shape)
         results['sample_decoding'] = analysis.decode_signal(
-                            h.numpy(),
-                            np.int32(self.eval_batch[4]),
+                            h,
+                            s,
                             self.sample_decode_time)
         sd = results['sample_decoding']
-        print(f"Decoding accuracy s0: {sd[:,0]} s1: {sd[:,1]}")
+        print(f"Decoding accuracy: {sd[:,0]}")
         if self._args.aggressive and np.mean(sd[1,:]) < self._args.min_sample_decode:
             pickle.dump(results, open(save_fn, 'wb'))
             print("Aborting...")
             return False
 
         print('Calculating average spike rates...')
-        results['initial_mean_h'] = np.mean(h.numpy(), axis = (0,2))
+        results['initial_mean_h'] = np.mean(h, axis = (0,2))
 
-        print('Calculating dimensionality...')
-        results['dimensionality'] = analysis.dimensionality(h.numpy(), self.epoch_bounds.values())
-        print(f"Dimensionality per epoch: {results['dimensionality']}")
-
-        h_std = np.std(np.clip(h.numpy(), 0., self._args.max_h_for_output))
+        h_std = np.std(np.clip(h, 0., self._args.max_h_for_output))
         print(f'Spike rate standard deviation {h_std:1.4f}')
 
         print('Starting main training loop...')
@@ -165,8 +194,12 @@ class Agent:
                     (j+1) / self._args.n_learning_rate_ramp * self._args.learning_rate)
 
 
-            loss, h, policy = self.actor.train(batch, copy.copy(h_init), 
-                copy.copy(m_init), learning_rate)
+            if self._args.model_type == 'model_experimental_stsp':
+                loss, h, policy = self.actor.train(batch, copy.copy(h_init), 
+                    copy.copy(m_init), learning_rate, copy.copy(syn_x), copy.copy(syn_u))
+            else:
+                loss, h, policy = self.actor.train(batch, copy.copy(h_init), 
+                    copy.copy(m_init), learning_rate)
 
             accuracies = analysis.accuracy_SL_all_tasks(
                                     np.float32(policy),
@@ -189,7 +222,11 @@ class Agent:
             if (j+1) % 100 == 0:
                 results[f'iter_{j + 1}_mean_h'] = np.mean(h.numpy(), axis = (0,2))
 
-        h, _ = self.actor.forward_pass(self.eval_batch[0], copy.copy(h_init), copy.copy(m_init))
+        if self._args.model_type == 'model_experimental_stsp':
+            h, _, _, _ = self.actor.forward_pass(self.eval_batch[0][0], copy.copy(h_init), copy.copy(m_init),
+                copy.copy(syn_x), copy.copy(syn_u))
+        else:
+            h, _ = self.actor.forward_pass(self.eval_batch[0][0], copy.copy(h_init), copy.copy(m_init))
         results['final_mean_h'] = np.mean(h.numpy(), axis = (0,2))
 
         results['tasks'] = self.tasks
@@ -236,15 +273,17 @@ class Agent:
             print(f"Steady-state activity {np.mean(h_init):2.4f}")
             results['steady_state_h'].append(np.mean(h_init))
 
-            h, _ = self.actor.forward_pass(self.eval_batch[0], copy.copy(h_init), copy.copy(m_init))
+            h, _ = self.actor.forward_pass(self.eval_batch[0][0], copy.copy(h_init), copy.copy(m_init))
 
             results['initial_mean_h'].append(np.mean(h.numpy(), axis = (0,2)))
+            '''
             results['sample_decoding'].append(analysis.decode_signal(
                                 h.numpy(),
                                 np.int32(self.eval_batch[4]),
                                 self.sample_decode_time))
             sd = results['sample_decoding'][-1]
             print(f"Decoding accuracy {sd[:,0], sd[:,1]}")
+            '''
 
             print('Calculating dimensionality...')
             results['dimensionality'].append(analysis.dimensionality(h.numpy(), self.epoch_bounds.values()))
@@ -327,6 +366,133 @@ class Agent:
                         # Append new data to it
                         self.outfile['data'].resize((cur_b + 1), axis=0)
                         self.outfile['data'][-1:] = train_acts_j
+
+            # Add the necessary elements to the results that we record
+            results['loss'].append(tr_loss)
+            results['task_accuracy'].append(tr_acc)
+            if self._args.save_activities:
+                train_rules = np.array([batch[5] for batch in self.eval_batches]).flatten()
+                train_labels = np.array([np.argmax(batch[1][:,-2,:].squeeze(), axis=1) for batch in self.eval_batches]).flatten()
+                train_samples = np.vstack([np.int16(batch[4]) for batch in self.eval_batches])
+
+                training_results['train_rules'].append(train_rules)
+                training_results['train_accs'].append(train_accs / 2)
+                training_results['train_labels'].append(train_labels)
+                training_results['train_samples'].append(train_samples)
+                training_results['save_iters'] = self.to_save
+
+                names = [weight.name for layer in self.actor.model.layers for weight in layer.weights]
+                for n in names:
+                    training_results[n] = train_weights[n]
+
+                # If needed: save this out!
+                if self._args.do_overwrite:
+                    with open(save_fn + "_tr.pkl", 'wb') as f:
+                        pickle.dump(training_results, f, protocol=4)
+
+            h, _ = self.actor.forward_pass(self.eval_batch[0][0], copy.copy(h_init), copy.copy(m_init))
+            results['final_mean_h'].append(np.mean(h.numpy(), axis = (0,2)))
+            results['successes'].append(k)
+            
+            # Reset the optimizer to facilitate training of the next model
+            self.actor.reset_optimizer()
+
+            # If specified
+            if self._args.do_overwrite:
+                pickle.dump(results, open(save_fn+".pkl", 'wb'), protocol=4)
+
+        pickle.dump(results, open(save_fn + ".pkl", 'wb'))
+        if self._args.save_activities:
+            self.outfile.close()
+
+
+    def train_frozen(self, rnn_params, n_networks, save_fn, original_task_accuracy=None):
+
+        # Set up records in advance, so each results file contains
+        # the results for all networks with the same parameter set
+        sample_decoding = []
+        save_fn = os.path.join(self._args.save_path, os.path.splitext(save_fn)[0])
+
+        if self._args.save_activities:
+            self.outfile = h5py.File(save_fn + ".h5", 'a')
+
+        results = {
+            'args': self._args,
+            'rnn_params': rnn_params,
+            'original_task_accuracy': original_task_accuracy,
+            'sample_decode_time': self.sample_decode_time,
+            'loss'                 : [],
+            'task_accuracy'        : [],
+            'sample_decoding'      : [],
+            'final_mean_h'         : [],
+            'successes'            : [],
+            'initial_mean_h'       : [],
+            'steady_state_h'       : [],
+            'dimensionality'       : []
+        }
+
+        training_results = defaultdict(list)
+        
+
+        for k in range(n_networks):
+
+            # Generate the network weights
+            self.actor.RNN.generate_new_weights(self._rnn_params, random_seed=k+20)
+
+            print('Determing steady-state values...')
+            h_init, m_init, h = self.actor.determine_steady_state(self.training_batches[0][0][0])
+            print(f"Steady-state activity {np.mean(h_init):2.4f}")
+            results['steady_state_h'].append(np.mean(h_init))
+
+            h, _ = self.actor.forward_pass(self.eval_batch[0], copy.copy(h_init), copy.copy(m_init))
+
+            results['initial_mean_h'].append(np.mean(h.numpy(), axis = (0,2)))
+            results['sample_decoding'].append(analysis.decode_signal(
+                                h.numpy(),
+                                np.int32(self.eval_batch[4]),
+                                self.sample_decode_time))
+            sd = results['sample_decoding'][-1]
+            print(f"Decoding accuracy {sd[:,0], sd[:,1]}")
+
+            print('Calculating dimensionality...')
+            results['dimensionality'].append(analysis.dimensionality(h.numpy(), self.epoch_bounds.values()))
+            print(f"Dimensionality per epoch: {results['dimensionality']}")
+
+            # Train the network
+            print('Starting main training loop...')
+            tr_acc, tr_loss = np.zeros((self._args.n_iterations, self.n_tasks)), \
+                np.zeros((self._args.n_iterations, self.n_tasks))
+            
+            train_accs = np.zeros((len(self.to_save), self.n_tasks))
+            train_weights = defaultdict(list)
+
+            # Train on each task in sequence
+            for t in range(self.n_tasks):
+
+                for j in range(self._args.n_iterations):
+                    t0 = time.time()
+
+                    batch = self.training_batches[t][j%self._args.n_stim_batches]
+                    if j >= self._args.n_training_iterations:
+                        learning_rate = 0.
+                    else:
+                        learning_rate = self._args.learning_rate#np.minimum(
+                        #    self._args.learning_rate,
+                        #    (j+1) / self._args.n_learning_rate_ramp * self._args.learning_rate)
+
+                    loss, h, policy = self.actor.train(batch, copy.copy(h_init), copy.copy(m_init), learning_rate)
+
+                    accuracies = analysis.accuracy_SL_all_tasks(
+                                            np.float32(policy),
+                                            np.float32(batch[1]),
+                                            np.float32(batch[2]),
+                                            np.int32(batch[5]),
+                                            np.arange(self.n_tasks))
+                    tr_acc[j, t] = accuracies[t]
+                    tr_loss[j, t]   = loss.numpy()
+                    print(f'Iteration {j} Loss {loss:1.4f} Accuracy {np.nanmean(accuracies[t]):1.3f} ' + 
+                        f'Mean activity {np.mean(h):2.4f} Time {time.time()-t0:2.2f}')
+                    
 
             # Add the necessary elements to the results that we record
             results['loss'].append(tr_loss)

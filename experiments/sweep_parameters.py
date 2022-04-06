@@ -2,7 +2,8 @@ import numpy as np
 import argparse
 import os
 import yaml
-from src import agent
+from src import agent, util
+
 
 def convert(argument):
     return list(map(int, argument.split(',')))
@@ -31,13 +32,16 @@ parser.add_argument('--restrict_output_to_exc', type=bool, default=False)
 parser.add_argument('--task_set', type=str, default='2stim')
 parser.add_argument('--model_type', type=str, default='model_experimental')
 parser.add_argument('--n_RFs', type=int, default=2)
-parser.add_argument('--top_down_trainable', type=util.str2bool, default=True)
+parser.add_argument('--top_down_trainable', type=util.str2bool, default=True, nargs="?")
 parser.add_argument('--readout_trainable', type=util.str2bool, default=True, nargs="?")
-parser.add_argument('--aggressive', type=bool, default=True)
-parser.add_argument('--min_sample_decode', type=float, default=0.75)
-parser.add_argument('--bottom_up_topology', type=bool, default=True)
+parser.add_argument('--bottom_up_topology', type=util.str2bool, default=True, nargs="?")
+parser.add_argument('--top_down_overlapping', type=util.str2bool, default=True, nargs="?")
+parser.add_argument('--save_activities', type=util.str2bool, default=False, nargs="?")
+parser.add_argument('--aggressive', type=bool, default=False)
+parser.add_argument('--min_sample_decode', type=float, default=0.)
 parser.add_argument('--n_top_down_hidden', type=int, default=64)
 parser.add_argument('--training_alg', type=str, default='BPTT')
+parser.add_argument('--n_hidden', type=int, default=2500)
 
 
 if __name__ == "__main__":
@@ -54,12 +58,12 @@ if __name__ == "__main__":
     rnn_params = argparse.Namespace(**rnn_params)
 
     # Define the agent
-    agent = agent.Agent(args, rnn_params, param_ranges)
+    agent = agent.Agent(args, rnn_params, param_ranges, sz=args.n_hidden)
     
     full_runs = 0
     for i in range(100000000):
         print(f'Main loop iteration {i} - Full runs {full_runs}')
-        params =  {k:v for k,v in vars(self._rnn_params).items()}
+        params =  {k:v for k,v in vars(rnn_params).items()}
         for k, v in param_ranges.items():
             if v[0] == v[1]:
                 new_value = v[0]

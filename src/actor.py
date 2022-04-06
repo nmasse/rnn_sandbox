@@ -2,7 +2,7 @@ import tensorflow as tf
 import numpy as np
 import os, copy
 from tensorflow.keras.layers import Dense
-from . import model, model_experimental, model_LSTM
+from . import model, model_experimental, model_LSTM, model_frozen
 import tensorflow_addons as tfa
 import tensorflow_probability as tfp
 from .DNI import DNI
@@ -17,12 +17,18 @@ class BaseActor:
 
         activity = []
         modulation = []
+        syn_xs = []
+        syn_us = []
+        rnp = self._rnn_params
+
         for stim in tf.unstack(stimulus,axis=1):
-            bottom_up = stim[:, :self._rnn_params.n_bottom_up]
-            top_down = stim[:, -self._rnn_params.n_top_down:]
-            if self._args.training_type=='RL':
-                top_down = tf.zeros((stim.shape[0], self._rnn_params.n_top_down), dtype=tf.float32)
-            output = self.model([bottom_up, top_down, h, m], training=False)
+            bottom_up = stim[:, :rnp.n_bottom_up]
+            top_down = stim[:, -rnp.n_top_down:]
+
+            if self._args.model_type == 'model_frozen':
+                output = self.model([bottom_up, self.td, h, m], training=False)
+            else:
+                output = self.model([bottom_up, top_down, h, m], training=False)
             if self._args.training_alg == 'DNI':
                 h = output[0]
                 m = output[2]
@@ -34,20 +40,25 @@ class BaseActor:
 
         return tf.stack(activity, axis=1), tf.stack(modulation, axis=1)
 
+
     def determine_steady_state(self, stimulus):
+
+        batch_size = stimulus.shape[0]
 
         t0 = self._args.steady_state_start // self._rnn_params.dt
         t1 = self._args.steady_state_end // self._rnn_params.dt
 
         h, m = self.RNN.initial_activity()
-        batch_size = stimulus.shape[0]
+
+
         h = tf.tile(h, (batch_size, 1))
         m = tf.tile(m, (batch_size, 1))
+
         activity, modulation = self.forward_pass(stimulus, h, m)
         mean_activity = tf.reduce_mean(activity[:,t0:t1,:], axis=(0,1))
         mean_modulation = tf.reduce_mean(modulation[:,t0:t1,:], axis=(0,1))
-        mean_activity = tf.tile(mean_activity[tf.newaxis, :], (batch_size, 1))
-        modulation = tf.tile(mean_modulation[tf.newaxis, :], (batch_size, 1))
+        mean_activity = tf.tile(mean_activity[tf.newaxis, :], (batch_size, 1)) # this used to assign this value to mean_activity
+        mean_modulation = tf.tile(mean_modulation[tf.newaxis, :], (batch_size, 1))
 
         return mean_activity, mean_modulation, activity
 
@@ -56,6 +67,32 @@ class BaseActor:
         for var in self.opt.variables():
             print(f'Resetting {var.name}')
             var.assign(tf.zeros_like(var))
+
+    def reset(self):
+        for layer in self.model.layers:
+            if isinstance(layer, tf.keras.Model): #if you're using a model as a layer
+                reset_weights(layer) #apply function recursively
+                continue
+
+            #where are the initializers?
+            if hasattr(layer, 'cell'):
+                init_container = layer.cell
+            else:
+                init_container = layer
+
+            for key, initializer in init_container.__dict__.items():
+                if "initializer" not in key: #is this item an initializer?
+                      continue #if no, skip it
+
+                # find the corresponding variable, like the kernel or the bias
+                if key == 'recurrent_initializer': #special case check
+                    var = getattr(init_container, 'recurrent_kernel')
+                else:
+                    var = getattr(init_container, key.replace("_initializer", ""))
+
+                var.assign(initializer(var.shape, var.dtype))
+
+        return
 
 class ActorSL(BaseActor):
 
@@ -71,8 +108,15 @@ class ActorSL(BaseActor):
             self.model = self.RNN.model
         else:
             self.model = tf.keras.models.load_model(saved_model_path)
+
         self.opt = tf.keras.optimizers.Adam(args.learning_rate, 
             epsilon=self._args.adam_epsilon)
+
+        if self._args.model_type == 'model_frozen':
+            self.td = tf.Variable(
+                tf.random.normal([self._rnn_params.n_hidden,], 0, 1e-2), 
+                trainable=True)
+            self.update_bias = lambda x: self.td.assign(x)
 
         # Create DNI object
         weights = self.model.get_weights()
@@ -81,6 +125,7 @@ class ActorSL(BaseActor):
 
         if self._args.training_alg == 'DNI':
             self.dni_opt = tf.keras.optimizers.Adam(1e-3)
+            self.W_rec = weights['rnn_w:0'] * self.RNN.EI_matrix
 
             self.DNI = DNI(self._rnn_params, 
                 weights['top_down1_w:0'], 
@@ -88,17 +133,35 @@ class ActorSL(BaseActor):
                 weights['rnn_w:0'] * self.RNN.EI_matrix, 
                 weights['alpha_soma:0'],
                 batch_size=self._args.batch_size)
+        elif self._args.training_alg == 'DNI_nonbio':
+            self.dni_opt = tf.keras.optimizers.Adam(1e-3)
 
+            self.DNI = DNI(self._rnn_params,
+                weights['top_down1_w:0'],
+                self.dni_opt,
+                weights['rnn_w:0'] * self.RNN.EI_matrix,
+                weights['alpha_soma:0'],
+                batch_size=self._args.batch_size,
+                use_approx_J=False,
+                W_FB=tf.transpose(weights['policy_w:0']))
 
-    def training_batch(self, stimulus, labels, h, m):
+    def training_batch(self, stimulus, labels, h, m, sg=False):
 
         policy = []
         activity = []
 
-        for stim in tf.unstack(stimulus,axis=1):
+        for i, stim in enumerate(tf.unstack(stimulus,axis=1)):
             bottom_up = stim[:, :self._rnn_params.n_bottom_up]
             top_down = stim[:, -self._rnn_params.n_top_down:]
-            h, m, p = self.model([bottom_up, top_down, h, m], training=True)
+            if self._args.model_type == 'model_frozen':
+                if sg:
+                    h, m, p = self.model([bottom_up, self.td, 
+                        tf.stop_gradient(h), tf.stop_gradient(m)], training=True)
+                else:
+                    h, m, p = self.model([bottom_up, self.td, h, 
+                        m], training=True)
+            else:
+                h, m, p = self.model([bottom_up, top_down, h, m], training=True)
             policy.append(p)
             activity.append(h)
 
@@ -106,8 +169,10 @@ class ActorSL(BaseActor):
 
     def train(self, batch, h, m, learning_rate):
 
-        if self._args.training_alg == 'DNI':
+        if 'DNI' in self._args.training_alg:
             return self.trainDNI(batch, h, m, learning_rate)
+        elif self._args.model_type == 'model_frozen':
+            return self.trainFrozen(batch, h, m, learning_rate)
         else:
             return self.trainBPTT(batch, h, m, learning_rate)
 
@@ -167,13 +232,16 @@ class ActorSL(BaseActor):
                     tf.squeeze(td),
                     tf.squeeze(mask[:,j]))
 
+
                 grads_and_vars = []
                 g_and_tv = zip(grads, self.model.trainable_variables)
                 for i, (g, v) in enumerate(g_and_tv):
+
                     g *= mask[:,j].mean()
                     g /= self._args.batch_size # because sum taken in DNI over axis 0
-                    g = tf.cast(tf.clip_by_norm(g, self._args.clip_grad_norm), 
-                        tf.float32)
+
+                    if 'top_down' in v.name:
+                        g *= self._args.top_down_grad_multiplier
 
                     grads_and_vars.append((g,v))
 
@@ -192,6 +260,93 @@ class ActorSL(BaseActor):
 
         return loss, activity, policy
 
+    def predict(self, batch, h, m):
+
+        # Unpack relevant information
+        stimulus      = batch[0]
+        labels        = batch[1]
+        mask          = batch[2]
+        reward_matrix = batch[3]
+
+        # One run without BPTT
+        inst_grads = []
+        activity, policy = [], []
+        for i, stim in enumerate(tf.unstack(stimulus, axis=1)):
+        
+            with tf.GradientTape(persistent=False) as tape:
+                
+                bottom_up = stim[:, :self._rnn_params.n_bottom_up]
+                top_down = stim[:, -self._rnn_params.n_top_down:]
+
+                h, m, p = self.model([bottom_up, self.td, 
+                        tf.stop_gradient(h), tf.stop_gradient(m)], training=True)
+
+                inst_loss = tf.nn.softmax_cross_entropy_with_logits(labels[:,i],
+                    p)
+                activity.append(h)
+                policy.append(p)
+            inst_grads.append(tape.gradient(inst_loss, self.td))
+        
+        inst_grads = tf.stack(inst_grads)
+        activity = tf.stack(activity, axis=1)
+        policy = tf.stack(policy, axis=1)
+        loss = tf.reduce_mean(
+            tf.nn.softmax_cross_entropy_with_logits(labels, policy) * mask)
+
+        old_td = self.td.numpy()
+        
+        return loss, activity, policy, inst_grads, old_td
+
+    def trainFrozen(self, batch, h, m, learning_rate):
+
+        # Unpack relevant information
+        stimulus      = batch[0]
+        labels        = batch[1]
+        mask          = batch[2]
+        reward_matrix = batch[3]
+
+        # Train via BPTT, using TF autograd
+        policy = []
+        activity = []
+        with tf.GradientTape(persistent=False) as tape:
+
+            # One run with BPTT
+            activity, policy = self.training_batch(
+                                        stimulus,
+                                        labels,
+                                        h, m)
+
+            policy = tf.stack(policy, axis=1)
+            activity = tf.stack(activity, axis=1)
+            loss = tf.nn.softmax_cross_entropy_with_logits(labels, 
+                policy)
+            loss = tf.reduce_mean(mask * loss)
+        grad = tape.gradient(loss, self.td)
+
+        # One run without BPTT
+        inst_grads = []
+        for i, stim in enumerate(tf.unstack(stimulus, axis=1)):
+        
+            with tf.GradientTape(persistent=False) as tape:
+                
+                bottom_up = stim[:, :self._rnn_params.n_bottom_up]
+                top_down = stim[:, -self._rnn_params.n_top_down:]
+
+                h, m, p = self.model([bottom_up, self.td, 
+                        tf.stop_gradient(h), tf.stop_gradient(m)], training=True)
+
+                inst_loss = tf.nn.softmax_cross_entropy_with_logits(labels[:,i],
+                    p)
+            inst_grads.append(tape.gradient(inst_loss, self.td))
+
+        old_td = self.td.numpy()
+        self.opt.learning_rate.assign(learning_rate)
+        if learning_rate > 0:
+            self.opt.apply_gradients([(grad, self.td)])
+        new_td = self.td.numpy()
+        inst_grads = tf.stack(inst_grads)
+        
+        return loss, activity, policy, inst_grads, grad, old_td, new_td
 
     def trainBPTT(self, batch, h, m, learning_rate):
 
@@ -213,6 +368,7 @@ class ActorSL(BaseActor):
             activity = tf.stack(activity, axis=1)
             loss = tf.nn.softmax_cross_entropy_with_logits(labels, 
                 policy)
+            activity_loss = tf.reduce_mean(activity)
             loss = tf.reduce_mean(mask * loss)
 
         grads = tape.gradient(loss, self.model.trainable_variables)
@@ -223,11 +379,13 @@ class ActorSL(BaseActor):
                 g *= self._args.top_down_grad_multiplier
             grads_and_vars.append((g,v))
 
+        # Modify learning rate if using frozen model
         self.opt.learning_rate.assign(learning_rate)
         if learning_rate > 0:
             self.opt.apply_gradients(grads_and_vars)
 
         return loss, activity, policy
+
 
 
 class ActorRL(BaseActor):
@@ -243,13 +401,14 @@ class ActorRL(BaseActor):
         else:
             self.model = tf.keras.models.load_model(saved_model_path)
 
-        self.opt = tf.keras.optimizers.Adam(args.learning_rate, epsilon=1e-05)
+        self.opt = tf.keras.optimizers.Adam(args.learning_rate, epsilon=1e-5)
 
 
     def get_actions(self, state, do_return_log_policy=True):
         # numpy based
         if self._args.model_type == 'model_LSTM':
             state[2] = np.expand_dims(state[2], 1)
+
 
         h, m, policy, values = self.model.predict(state)
         policy += 1e-9
@@ -268,7 +427,6 @@ class ActorRL(BaseActor):
         else:
             log_policy = None
         actions = np.stack(actions, axis = 0)
-        
 
         return h, m, log_policy, actions, values
 
@@ -303,7 +461,7 @@ class ActorRL(BaseActor):
 
             policy += 1e-9
             log_policy = tf.reduce_sum(actions_one_hot * tf.math.log(policy),axis=-1)
-            entropy = - tf.reduce_sum(policy * tf.math.log(policy), axis=-1)
+            entropy = -tf.reduce_sum(policy * tf.math.log(policy), axis=-1)
             surrogate = self.compute_policy_loss(old_policy, log_policy, gaes)
             policy_loss = tf.reduce_mean(mask * surrogate)
 
@@ -432,3 +590,79 @@ class ActorContinuousRL:
             if not tf.math.is_nan(global_norm):
                 self.opt.apply_gradients(zip(grads, self.model.trainable_variables))
         return loss, global_norm
+
+class ActorGradientEstimator(BaseActor):
+    def __init__(self, args, rnn_params):
+        self._args = args
+        self._rnn_params = rnn_params
+
+        # Bind relevant shape information
+        self.model = self.create_model()
+        self.opt = tf.keras.optimizers.Adam()
+
+    def create_model(self):
+        inst_grads = tf.keras.Input((None, self._rnn_params.n_hidden,)) # batch_size x time x units
+        lstm = tf.keras.layers.LSTM(256)(inst_grads) # batch_size x 128
+        output = tf.keras.layers.Dense(self._rnn_params.n_top_down_hidden)(lstm)
+        return tf.keras.models.Model(inst_grads, output)
+
+    def predict(self, inst_grads):
+        return self.model.predict(inst_grads)
+
+    def train(self, inst_grads, true_grads, learning_rate):
+
+        inst_grads = tf.stop_gradient(inst_grads)
+        true_grads = tf.stop_gradient(true_grads)
+
+        with tf.GradientTape() as tape:
+            pred_grads = self.model(inst_grads)
+            loss = tf.reduce_mean(
+                tf.keras.losses.mean_squared_error(true_grads, pred_grads))
+        grads = tape.gradient(loss, self.model.trainable_variables)
+        grads_and_vars = []
+        for g, v in zip(grads, self.model.trainable_variables):
+            g = tf.clip_by_norm(g, self._args.clip_grad_norm)
+            grads_and_vars.append((g,v))
+
+        self.opt.learning_rate.assign(learning_rate)
+        if learning_rate > 0:
+            self.opt.apply_gradients(grads_and_vars)
+    
+        return loss
+
+
+class ActorBiasEstimator(BaseActor):
+    def __init__(self, args, rnn_params):
+        self._args = args
+        self._rnn_params = rnn_params
+
+        # Bind relevant shape information
+        self.model = self.create_model()
+        self.opt = tf.keras.optimizers.Adam()
+
+    def create_model(self):
+        est_grad_and_last_td = tf.keras.Input((2 * self._rnn_params.n_hidden)) # batch_size x (past TD input) + (past TD gradient)
+        output = tf.keras.layers.Dense(self._rnn_params.n_top_down_hidden)(est_grad_and_last_td)
+        return tf.keras.models.Model(est_grad_and_last_td, output)
+
+    def predict(self, inputs):
+        return self.model.predict(inputs)
+
+    def train(self, inputs, true_new_td, learning_rate):
+
+        inputs = tf.stop_gradient(inputs)
+        true_new_td = tf.stop_gradient(true_new_td)
+        with tf.GradientTape() as tape:
+            pred_new_td = self.model(inputs)
+            loss = tf.reduce_mean(
+                tf.keras.losses.mean_squared_error(true_new_td, pred_new_td))
+        grads = tape.gradient(loss, self.model.trainable_variables)
+        grads_and_vars = []
+        for g, v in zip(grads, self.model.trainable_variables):
+            g = tf.clip_by_norm(g, self._args.clip_grad_norm)
+            grads_and_vars.append((g,v))
+
+        self.opt.learning_rate.assign(learning_rate)
+        if learning_rate > 0:
+            self.opt.apply_gradients(grads_and_vars)
+        return loss

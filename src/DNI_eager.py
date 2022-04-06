@@ -8,7 +8,7 @@ Modified: Matt Rosen (3/2022)
 
 import numpy as np
 import tensorflow as tf
-import copy, time
+import copy
 from . import util
 
 class DNI():
@@ -96,7 +96,7 @@ class DNI():
         self.top_down_w1 = top_down_w1
 
 
-        #self.W_rec = tf.tile(tf.expand_dims(W_rec, 0), [self.batch_size, 1, 1])
+        self.W_rec = tf.tile(tf.expand_dims(W_rec, 0), [self.batch_size, 1, 1])
 
         self.m_out = self.n_hidden + self.n_actions + 1
 
@@ -113,7 +113,7 @@ class DNI():
         """Resets internal variables of the learning algorithm (relevant if
         simulation includes a trial structure). Default is to do nothing."""
         self.q = tf.zeros(self.n_hidden)
-        #self.J_approx = copy.copy(self.W_rec)
+        self.J_approx = copy.copy(self.W_rec)
 
         return
 
@@ -199,7 +199,7 @@ class DNI():
         # Update learning variables for this algorithm
         self.update_learning_vars(h, lab, h_prev, lab_prev, dL_dz, self.q, mask, u)
         self.propagate_feedback_to_hidden(dL_dz, self.q)
-        
+   
         td_hidden_grads = tf.transpose(self.get_rec_grads(h_prev, u, td_inputs))
 
         # Modify recurrent grads (n_hidden x n_hidden) 
@@ -215,22 +215,18 @@ class DNI():
     def update_learning_vars(self, h, label, h_prev, label_prev, dL_dz, q, mask, u):
         """Updates the A matrix by Eqs. (3) and (4)."""
 
-        #self.update_J_approx(h, h_prev, u)
+        self.update_J_approx(h, h_prev, u)
 
         #Compute synthetic gradient estimate of credit assignment at previous
         #time step. This is NOT used to drive learning in W but rather to drive
         #learning in A.
-
         self.a_tilde_prev = tf.concat([h_prev, label_prev, 
             tf.ones([self.batch_size, 1])], axis=1)
         self.sg = self.synthetic_grad(self.a_tilde_prev)
 
-
         #Compute the target, error and loss for the synthetic gradient function
-
         self.sg_target = self.get_sg_target(h, label, dL_dz, q)
         self.A_error   = (self.sg - self.sg_target) * tf.expand_dims(mask, 1)
-
         #self.A_loss    = tf.reduce_mean(0.5 * tf.math.square(self.A_error))
 
         #Compute gradients for A
@@ -246,7 +242,7 @@ class DNI():
         # used to calculate the target in Eq. (3), with the latest value of A.
         if self.i_fix == self.fix_A_interval - 1:
             self.i_fix = 0
-            self.A_.assign(self.A)
+            self.A_.assign(self.A.numpy())
         else:
             self.i_fix += 1
 
@@ -275,7 +271,7 @@ class DNI():
 
         return sg_target
 
-
+    @tf.function()
     def update_J_approx(self, h, h_prev, u):
         """Updates the approximate Jacobian by SGD according to a squared-error
         loss function:
@@ -286,11 +282,10 @@ class DNI():
         if self.use_approx_J:
             self.J_error = tf.einsum('ij,ijk->ij', h_prev, self.J_approx) - h
             self.J_approx -= (self.J_lr * tf.einsum('ij,ik->ijk', 
-                self.J_error, h_prev))# / tf.reduce_max(h))
+                self.J_error, h_prev) / tf.reduce_max(h))
         else:
             D = tf.linalg.diag(util.relu_derivative(u)) #Nonlinearity derivative
             self.J_approx = self.alpha * tf.multiply(D, self.W_rec) + (1 - self.alpha) * tf.eye(self.n_hidden)
-
 
     def synthetic_grad(self, a_tilde):
         """Computes the synthetic gradient using current values of A.
@@ -300,7 +295,6 @@ class DNI():
         self.sg_h = a_tilde @ self.A
         return self.sg_h
 
-
     def synthetic_grad_(self, a_tilde):
         """Computes the synthetic gradient using A_ and with an extra activation
         function (for DNI(b)), only for computing the label in Eq. (3).
@@ -308,7 +302,6 @@ class DNI():
             An array of shape (n_h) representing the synthetic gradient."""
         self.sg_h_ = a_tilde @ self.A_
         return self.sg_h_ # Should this be relu(self.sg_h_)?
-
 
     def get_rec_grads(self, h_prev, u, td_inputs):
         """Computes the recurrent grads for the network by implementing Eq. (2),

@@ -1,7 +1,7 @@
 import numpy as np
 from tasks import Task
 
-class TwoStimLeftIndication(Task.Task):
+class TwoStimSummingOppositeMatching(Task.Task):
     # TODO: must resolve how outputs are set (e.g. in case of delay go and dms being trained in same net)
     # currently, assuming fix/match/nonmatch are 0/1/2
 
@@ -27,9 +27,29 @@ class TwoStimLeftIndication(Task.Task):
 
         for i in range(batch_size):
 
-            # Determine sample stimulus, RFs
-            sample_dirs = np.random.choice(self.n_motion_dirs, self.n_sample, replace=False)
+            # Determine sample stimulus, RFs, outputs
+            sample_dirs = np.random.choice(self.n_motion_dirs, self.n_sample, replace=True)#False)
             catch       = np.random.rand() < self.catch_trial_pct
+
+            sum_sample = np.sum(sample_dirs) / self.n_motion_dirs * 2 * np.pi
+            sum_sample_opp = (sum_sample + np.pi) % (2 * np.pi)
+            resp_idx = int(sum_sample_opp // (2 * np.pi / (self.n_output - 1)) + 1)
+
+            # Determine matchingness for this trial
+            match = int(np.random.rand() < 0.5)
+            if match:
+                test_dir = resp_idx - 1 # -1 for looking one before fixation
+            else:
+                other_stim = [sample_dirs[0], # RF0 stim
+                              sample_dirs[1], # RF1 stim
+                              np.amin(sample_dirs), # Min
+                              np.amax(sample_dirs), # Max
+                              (sample_dirs[0] - sample_dirs[1]) % self.n_motion_dirs, # RF0 - RF1
+                              (sample_dirs[1] - sample_dirs[0]) % self.n_motion_dirs, # RF1 - RF0
+                              (sample_dirs[0] + sample_dirs[1]) % self.n_motion_dirs] # Sum
+
+                test_dir = np.random.choice(np.setdiff1d(other_stim, resp_idx - 1))
+                #test_dir = np.random.choice(np.setdiff1d(np.arange(self.n_motion_dirs), resp_idx - 1))
 
             # Establish task timings
             fix_bounds      = [0, (self.dead_time + self.fix_time)]
@@ -53,23 +73,22 @@ class TwoStimLeftIndication(Task.Task):
             rule_input = int(self.n_rule_tuned > 0) * np.reshape(self.rule_tuning[:,self.rule_id],(1,-1))
             fix_input  = int(self.n_fix_tuned > 0) * np.reshape(self.fix_tuning[:,0],(1,-1))
 
-            cue_input  = int(self.n_cue_tuned > 0) * np.reshape(self.cue_tuning[:,0],(1,-1))
+            test_input = np.reshape(self.motion_tuning[:, -1, test_dir], (1, -1))
+
+            #cue_input  = int(self.n_cue_tuned > 0) * np.reshape(self.cue_tuning[:,0],(1,-1))
 
             trial_info['neural_input'][i, range(0, response_bounds[0]), :] += fix_input 
-            trial_info['neural_input'][i, range(*response_bounds), :] += cue_input
+            #trial_info['neural_input'][i, range(*response_bounds), :] += cue_input
             trial_info['neural_input'][i, range(*sample_bounds), :] += sample_input
             trial_info['neural_input'][i, range(*rule_bounds), :]   += rule_input
+            trial_info['neural_input'][i, range(*response_bounds), :] += test_input
 
-            # Generate outputs
-            left_sample = sample_dirs[0] / self.n_motion_dirs * 2 * np.pi
-            left_sample = left_sample % (2 * np.pi)
-            resp_idx = int(left_sample // (2 * np.pi / (self.n_output - 1)) + 1)
 
             # Until the response period, should indicate nothing
             trial_info['desired_output'][i, range(0, response_bounds[0]), 0] = 1.
 
             if not catch:
-                trial_info['desired_output'][i, range(*response_bounds), resp_idx] = 1.
+                trial_info['desired_output'][i, range(*response_bounds), match + 1] = 1.
             else:
                 trial_info['desired_output'][i, range(0, response_bounds[0]), 0] = 1.
 
@@ -79,17 +98,17 @@ class TwoStimLeftIndication(Task.Task):
 
             if not catch:
                 reward_matrix[range(*response_bounds), 1:] = self.wrong_choice_penalty
-                reward_matrix[range(*response_bounds), resp_idx] = self.correct_choice_reward
+                reward_matrix[range(*response_bounds), match + 1] = self.correct_choice_reward
                 reward_matrix[-1,0] = self.fix_break_penalty
             else:
                 reward_matrix[-1, 0] = self.correct_choice_reward
 
             trial_info['reward_matrix'][i,...] = reward_matrix
 
-
             # Record trial information
             trial_info['sample'][i,:] = sample_dirs
             trial_info['catch'][i]  = bool(catch)
+            trial_info['match'][i]  = bool(match)
             trial_info['rule'][i]   = self.rule_id
             timing_dict = {'fix_bounds'     : fix_bounds,
                            'sample_bounds'  : sample_bounds,

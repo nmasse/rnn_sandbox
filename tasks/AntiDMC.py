@@ -1,7 +1,7 @@
 import numpy as np
 from tasks import Task
 
-class DMC(Task.Task):
+class AntiDMC(Task.Task):
 
     def __init__(self, task_name, rule_id, var_delay, dt, tuning, timing, shape, misc):
 
@@ -15,13 +15,20 @@ class DMC(Task.Task):
     def _debug(self):
         # Print debug string: for every combination of sample and test stimuli, 
         # print out S/T/R
-        print("DMC:")
+        print("Anti-DMC:")
         for s in range(self.n_motion_dirs):
-            for t in range(self.n_motion_dirs):
-                s_cat = ((s // (self.n_motion_dirs // 2))) % 2
-                t_cat = ((t // (self.n_motion_dirs // 2))) % 2
-                match = s_cat == t_cat
-                print(f"S: {s}, cat. {s_cat}; T: {t}, cat. {t_cat}; M: {match}")
+            sample_cat = ((s // (self.n_motion_dirs // 2))) % 2
+            dir0 = int(sample_cat * (self.n_motion_dirs // 2))
+            dir1 = int(self.n_motion_dirs // 2 + sample_cat * self.n_motion_dirs // 2)
+            t_arr_nonmatch = np.setdiff1d(np.arange(dir0, dir1), s)
+
+            opp_dir = (s + self.n_motion_dirs // 2)%self.n_motion_dirs
+            opp_cat = (sample_cat + 1) % 2
+            dir0 = int(opp_cat * (self.n_motion_dirs // 2))
+            dir1 = int(self.n_motion_dirs // 2 + opp_cat * self.n_motion_dirs // 2)
+            t_arr_match = np.setdiff1d(np.arange(dir0, dir1), opp_dir)
+            print(f"S: {s}, cat. {sample_cat}; Test array MATCH: {t_arr_match}")
+            print(f"S: {s}, cat. {sample_cat}; Test array NONMATCH: {t_arr_nonmatch}")
         return
 
     def generate_trials(self, batch_size, test_mode=False, delay_length=None):
@@ -32,7 +39,7 @@ class DMC(Task.Task):
 
             # Determine trial parameters (sample stimulus, match, etc.)
             sample_dir = np.random.randint(self.n_motion_dirs)
-            sample_cat = sample_dir // (self.n_motion_dirs // 2)
+            sample_cat = ((sample_dir // (self.n_motion_dirs // 2))) % 2
             match      = np.random.randint(2)
             catch      = np.random.rand() < self.catch_trial_pct
 
@@ -43,12 +50,6 @@ class DMC(Task.Task):
             # Determine test direction based on whether it's a match trial or not
             if not test_mode:
                 if match == 1:
-                    # Do not use sample_dir as a match test stimulus
-                    dir0 = int(sample_cat * (self.n_motion_dirs // 2))
-                    dir1 = int(self.n_motion_dirs // 2 + sample_cat * self.n_motion_dirs // 2)
-                    possible_dirs = np.setdiff1d(np.arange(dir0, dir1), sample_dir)
-                    test_dir = np.random.choice(possible_dirs)
-                else:
                     # Don't use opposite direction as test, either
                     opp_dir = (sample_dir + self.n_motion_dirs // 2)%self.n_motion_dirs
                     opp_cat = (sample_cat + 1) % 2
@@ -56,9 +57,16 @@ class DMC(Task.Task):
                     dir1 = int(self.n_motion_dirs // 2 + opp_cat * self.n_motion_dirs // 2)
                     possible_dirs = np.setdiff1d(np.arange(dir0, dir1), opp_dir)
                     test_dir = np.random.choice(possible_dirs)
+                else:
+                    # Do not use sample_dir as a match test stimulus
+                    dir0 = int(sample_cat * (self.n_motion_dirs // 2))
+                    dir1 = int(self.n_motion_dirs // 2 + sample_cat * self.n_motion_dirs // 2)
+                    possible_dirs = np.setdiff1d(np.arange(dir0, dir1), sample_dir)
+                    test_dir = np.random.choice(possible_dirs)
+                    
             else:
                 test_dir     = np.random.randint(self.n_motion_dirs)
-                test_cat     = test_dir // (self.n_motion_dirs // 2)
+                test_cat     = (test_dir // (self.n_motion_dirs // 2)) % 2
                 match        = 1 if test_cat == sample_cat else 0
 
             # Determine trial timing
@@ -87,6 +95,7 @@ class DMC(Task.Task):
             trial_info['neural_input'][i, range(*test_bounds), :]   += test_input
             trial_info['neural_input'][i, range(0, test_bounds[0]), :] += fix_input
             trial_info['neural_input'][i, range(*rule_bounds), :]   += rule_input 
+
 
             # Generate outputs
             trial_info['desired_output'][i, range(0, test_bounds[0]), 0] = 1.

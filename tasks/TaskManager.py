@@ -31,7 +31,20 @@ class TaskGym(gym.Env):
         self.time = np.zeros((batch_size), dtype=np.int32)
         self.clipob = 10.
         self.cliprew = 10.
-        self.epsilon = epsilon
+
+    def analyze_trials_per_task(self):
+
+        # 1. Confirm that # match and # non match trials are about equal
+        # for all tasks
+
+
+        # 2. For each stimulus trio, that is, each pair of samples and test,
+        # compute across all tasks the overall number of times that grouping
+        # was paired w/ a match vs. a non-match output (should be roughly 
+        # equal)
+
+
+        return
 
 
     def split_observation(self, observation):
@@ -160,13 +173,16 @@ class TaskManager:
         # Set random seed
         np.random.seed(random_seed)
 
-        # Filter for DMS, ABCA among task_list specified
+        # Filter for DMS, AntiDMS, ABCA among task_list specified
         for t in task_list:
             if t['name'] == 'DMS':
                 t['name'] = 'DMRS'
                 t['rotation'] = 0
+            elif t['name'] == 'AntiDMS':
+                t['name'] = 'DMRS'
+                t['rotation'] = 180
 
-            if t['name'] == 'ABCA':
+            elif t['name'] == 'ABCA':
                 t['name'] = 'ABBA'
 
         # Use number of task_list to determine number of rule-tuned inputs,
@@ -370,6 +386,68 @@ class TaskManager:
                   'cue'   : cue_tuning}
         return tuning
 
+def twostim_matchingtasks():
+
+    generic_timing = {'dead_time'   : 300,
+                      'fix_time'    : 200,
+                      'sample_time'  : 300,
+                      'delay_time'   : 1000,
+                      'test_time'    : 300}
+    generic_hps = {'n_motion_dirs': 8,
+                   'n_sample': 2,
+                   'n_RFs': 3,
+                   'n_cues': 0, # No cues
+                   'var_delay': False,
+                   'distractor': False,
+                   'n_output': 3,
+                   'n_test': 1,
+                   'mask_duration': 40,
+                   'var_delay_max': 200,
+                   'trial_length': sum(generic_timing.values()),
+                   'timing': generic_timing}
+
+    # All 2-stim tasks share the same set of meta-params
+    AveragingMatching = generic_hps.copy()
+    AveragingMatching['name'] = 'TwoStimAveragingMatching'
+
+    AveragingOppositeMatching = generic_hps.copy()
+    AveragingOppositeMatching['name'] = 'TwoStimAveragingOppositeMatching'
+
+    LeftIndicationMatching = generic_hps.copy()
+    LeftIndicationMatching['name'] = 'TwoStimLeftIndicationMatching'
+
+    LeftIndicationOppositeMatching = generic_hps.copy()
+    LeftIndicationOppositeMatching['name'] = 'TwoStimLeftIndicationOppositeMatching'
+
+    RightIndicationMatching = generic_hps.copy()
+    RightIndicationMatching['name'] = 'TwoStimRightIndicationMatching'
+
+    RightIndicationOppositeMatching = generic_hps.copy()
+    RightIndicationOppositeMatching['name'] = 'TwoStimRightIndicationOppositeMatching'
+
+    MinIndicationMatching = generic_hps.copy()
+    MinIndicationMatching['name'] = 'TwoStimMinIndicationMatching'
+
+    MaxIndicationMatching = generic_hps.copy()
+    MaxIndicationMatching['name'] = 'TwoStimMaxIndicationMatching'
+
+    SubtractingLeftRightMatching = generic_hps.copy()
+    SubtractingLeftRightMatching['name'] = 'TwoStimSubtractingLeftRightMatching'
+
+    SubtractingRightLeftMatching = generic_hps.copy()
+    SubtractingRightLeftMatching['name'] = 'TwoStimSubtractingRightLeftMatching'
+
+    SummingMatching = generic_hps.copy()
+    SummingMatching['name'] = 'TwoStimSummingMatching'
+
+    SummingOppositeMatching = generic_hps.copy()
+    SummingOppositeMatching['name'] = 'TwoStimSummingOppositeMatching'
+
+    return [LeftIndicationMatching, RightIndicationMatching, \
+        MinIndicationMatching, MaxIndicationMatching, \
+        SubtractingLeftRightMatching, SubtractingRightLeftMatching, \
+        SummingMatching, SummingOppositeMatching]
+
 
 def twostim_tasks():
 
@@ -378,10 +456,10 @@ def twostim_tasks():
                       'sample_time'  : 300,
                       'delay_time'   : 1000,
                       'test_time'    : 300}
-    generic_hps = {'n_motion_dirs':8,
+    generic_hps = {'n_motion_dirs': 8,
                    'n_sample': 2,
                    'n_RFs': 2,
-                   'n_cues': 0, # No cues
+                   'n_cues': 1, # No cues
                    'var_delay': False,
                    'distractor': False,
                    'n_output': 9, # N_DIR + 1 for fixation
@@ -430,6 +508,106 @@ def twostim_tasks():
 
     return [LeftIndication, RightIndication, \
         MinIndication, MaxIndication, SubtractingLeftRight, SubtractingRightLeft, Summing, SummingOpposite]
+
+def revised_tasks():
+
+    generic_timing = {'dead_time'   : 300,
+                     'fix_time'     : 200,
+                     'sample_time'  : 300,
+                     'delay_time'   : 1000,
+                     'test_time'    : 300,
+                     'cue_time'     : 200}
+
+    DMS = {}
+    DMS['name'] = 'DMS'
+    DMS['n_motion_dirs'] = 6
+    DMS['n_cues'] = 0
+    DMS['n_RFs'] = 1
+    DMS['var_delay'] = False
+    DMS['distractor'] = False
+    DMS['n_output'] = 3
+    DMS['var_delay_max'] = 200
+    DMS['mask_duration'] = 40
+    DMS['n_sample'] = 1
+    DMS['n_test'] = 1
+    DMS['trial_length'] = sum(generic_timing.values()) - generic_timing['cue_time']
+    DMS['timing'] = generic_timing
+
+    AntiDMS = {}
+    AntiDMS['name'] = 'AntiDMS'
+    AntiDMS['n_motion_dirs'] = 6
+    AntiDMS['rotation'] = 45
+    AntiDMS['n_cues'] = 0
+    AntiDMS['n_RFs'] = 1
+    AntiDMS['var_delay'] = False
+    AntiDMS['distractor'] = False
+    AntiDMS['n_output'] = 3
+    AntiDMS['var_delay_max'] = 200
+    AntiDMS['mask_duration'] = 40
+    AntiDMS['n_sample'] = 1
+    AntiDMS['n_test'] = 1
+    AntiDMS['trial_length'] = sum(generic_timing.values()) - generic_timing['cue_time']
+    AntiDMS['timing'] = generic_timing
+
+    DMC = {}
+    DMC['name'] = 'DMC'
+    DMC['n_motion_dirs'] = 6
+    DMC['n_cues'] = 0
+    DMC['n_RFs'] = 1
+    DMC['var_delay'] = False
+    DMC['n_output'] = 3
+    DMC['var_delay_max'] = 200
+    DMC['mask_duration'] = 40
+    DMC['n_sample'] = 1
+    DMC['n_test'] = 1
+    DMC['trial_length'] = sum(generic_timing.values()) - generic_timing['cue_time']
+    DMC['timing'] = generic_timing
+
+    AntiDMC = {}
+    AntiDMC['name'] = 'AntiDMC'
+    AntiDMC['n_motion_dirs'] = 6
+    AntiDMC['n_cues'] = 0
+    AntiDMC['n_RFs'] = 1
+    AntiDMC['var_delay'] = False
+    AntiDMC['n_output'] = 3
+    AntiDMC['var_delay_max'] = 200
+    AntiDMC['mask_duration'] = 40
+    AntiDMC['n_sample'] = 1
+    AntiDMC['n_test'] = 1
+    AntiDMC['trial_length'] = sum(generic_timing.values()) - generic_timing['cue_time']
+    AntiDMC['timing'] = generic_timing
+
+    OIC = {}
+    OIC['name'] = 'OIC'
+    OIC['n_motion_dirs'] = 6
+    OIC['n_cues'] = 0
+    OIC['n_RFs'] = 1
+    OIC['var_delay'] = False
+    OIC['categorization'] = True
+    OIC['n_output'] = 3
+    OIC['var_delay_max'] = 200
+    OIC['mask_duration'] = 40
+    OIC['n_sample'] = 1
+    OIC['n_test'] = 1
+    OIC['trial_length'] = sum(generic_timing.values()) - generic_timing['cue_time']
+    OIC['timing'] = generic_timing
+
+    AntiOIC = {}
+    AntiOIC['name'] = 'AntiOIC'
+    AntiOIC['n_motion_dirs'] = 6
+    AntiOIC['n_cues'] = 0
+    AntiOIC['n_RFs'] = 1
+    AntiOIC['var_delay'] = False
+    AntiOIC['categorization'] = True
+    AntiOIC['n_output'] = 3
+    AntiOIC['var_delay_max'] = 200
+    AntiOIC['mask_duration'] = 40
+    AntiOIC['n_sample'] = 1
+    AntiOIC['n_test'] = 1
+    AntiOIC['trial_length'] = sum(generic_timing.values()) - generic_timing['cue_time']
+    AntiOIC['timing'] = generic_timing
+
+    return [DMS, AntiDMS, DMC, AntiDMC, OIC, AntiOIC]
 
 def default_tasks(task_set):
 
@@ -672,12 +850,18 @@ def default_tasks(task_set):
     RetroWM['timing'] = pro_ret_timing
 
 
+
+
     if task_set == "7tasks":
         task_list = [DMS, DMS_distractor, DMRS180, DMC, DelayGo, ProWM, RetroWM]
     elif task_set == "5tasks":
         task_list = [DMS, DMS_distractor, DMRS180, DMC, DelayGo]
     elif task_set == '2stim':
         task_list = twostim_tasks()
+    elif task_set == '2stim_matching':
+        task_list = twostim_matchingtasks()
+    elif task_set == 'revised_tasks':
+        task_list = revised_tasks()
     elif task_set == "challenge":
         task_list = [DMS, ABBA, ABCA]
 

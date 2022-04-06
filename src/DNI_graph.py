@@ -8,7 +8,7 @@ Modified: Matt Rosen (3/2022)
 
 import numpy as np
 import tensorflow as tf
-import copy, time
+import copy
 from . import util
 
 class DNI():
@@ -69,10 +69,11 @@ class DNI():
         #Default parameters
         self.optimizer = optimizer
         self.SG_L2_reg = 0
-        self.fix_A_interval = 5
+        self.fix_A_interval = tf.constant(4, dtype=tf.float32)
         self.use_approx_J = use_approx_J
-        self.alpha = alpha
-        self.J_lr = 0.0001
+        self.alpha = tf.constant(alpha, dtype=tf.float32)
+        self.J_lr = tf.constant(0.0001, dtype=tf.float32)
+        self.batch_size = batch_size
 
         self.rnn_params = rnn_params
         self.n_top_down = self.rnn_params.n_top_down
@@ -80,8 +81,9 @@ class DNI():
         self.n_hidden = self.rnn_params.n_hidden
         self.n_actions = self.rnn_params.n_actions
         self.m = self.n_top_down 
-        self.q = tf.zeros(self.n_hidden)
-        self.batch_size = batch_size
+        #self.q = tf.zeros(self.n_hidden)
+        self.q = tf.Variable(tf.zeros([self.batch_size, self.n_hidden]), dtype=tf.float32)
+        
 
         # Bind loss fxn 
         self.L = util.softmax_cross_entropy_
@@ -90,30 +92,28 @@ class DNI():
         # Bind feedback weight matrix and top-down weight matrix
         if W_FB is None:
             self.W_FB = tf.random.normal([self.n_actions, self.n_hidden], 
-                0, 1/np.sqrt(self.n_actions))
+                0, 1/np.sqrt(self.n_actions), dtype=tf.float32)
         else:
             self.W_FB = W_FB
         self.top_down_w1 = top_down_w1
 
-
-        #self.W_rec = tf.tile(tf.expand_dims(W_rec, 0), [self.batch_size, 1, 1])
-
+        self.W_rec = tf.tile(tf.expand_dims(W_rec, 0), [self.batch_size, 1, 1])
         self.m_out = self.n_hidden + self.n_actions + 1
 
         # Set up Jacobian
-        self.J_approx = copy.copy(W_rec)
+        self.J_approx = tf.Variable(tf.identity(self.W_rec), dtype=tf.float32)
         
-        self.i_fix = 0
+        self.i_fix = tf.Variable(0, dtype=tf.float32)
         self.A = tf.Variable(tf.random.normal([self.m_out, self.n_hidden],
-                0, np.sqrt(1/self.m_out)))
+                0, np.sqrt(1/self.m_out)), dtype=tf.float32)
         self.A_ = copy.copy(self.A)
 
 
     def reset_learning(self):
         """Resets internal variables of the learning algorithm (relevant if
         simulation includes a trial structure). Default is to do nothing."""
-        self.q = tf.zeros(self.n_hidden)
-        #self.J_approx = copy.copy(self.W_rec)
+        self.q.assign(tf.zeros([self.batch_size, self.n_hidden], dtype=tf.float32))
+        self.J_approx.assign(tf.identity(self.W_rec))
 
         return
 
@@ -129,7 +129,7 @@ class DNI():
                 concatenation (along column axis) of the derivative of the loss
                 w.r.t. rnn.W_out and w.r.t. rnn.b_out.
         """
-        h_ = tf.concat((h, tf.ones((h.shape[0], 1))), axis=1)
+        h_ = tf.concat((h, tf.ones((h.shape[0], 1), dtype=tf.float32)), axis=1)
         dL_dz = self.dL_dz(labels, policy)
         return tf.tensordot(dL_dz, h_, axes=([0], [0])), dL_dz
 
@@ -142,9 +142,7 @@ class DNI():
         and applying the chain rule, i.e. taking its matrix product with the
         random matrix of feedback weights, as in feedback alignment. 
         (See Lillicrap et al. 2016.) Updates q to the current value of dL/da."""
-        self.q_prev = copy.copy(self.q)
-        self.q = dL_dz @ self.W_FB
-        return
+        return q, dL_dz @ self.W_FB
 
     def L2_regularization(self, grads):
         """Adds L2 regularization to the gradient.
@@ -177,7 +175,7 @@ class DNI():
             grads[i] *= (W != 0)
         return grads
 
-    #@tf.function()
+    @tf.function()
     def __call__(self, h, h_prev, pol, pol_prev, lab, lab_prev, u, td_inputs, mask):
         """Calculates the final grads for this time step.
         Assumes the user has already called self.update_learning_vars, a
@@ -197,10 +195,10 @@ class DNI():
         outer_grads, dL_dz = self.get_outer_grads(h, lab, pol)
         
         # Update learning variables for this algorithm
-        self.update_learning_vars(h, lab, h_prev, lab_prev, dL_dz, self.q, mask, u)
-        self.propagate_feedback_to_hidden(dL_dz, self.q)
-        
-        td_hidden_grads = tf.transpose(self.get_rec_grads(h_prev, u, td_inputs))
+        a_tilde = self.update_learning_vars(h, lab, h_prev, lab_prev, dL_dz, self.q, mask, u)
+        q_prev, q = self.propagate_feedback_to_hidden(dL_dz, self.q)
+   
+        td_hidden_grads = tf.transpose(self.get_rec_grads(h_prev, u, td_inputs, a_tilde))
 
         # Modify recurrent grads (n_hidden x n_hidden) 
         # to obtain grads w.r.t. top_down_w0
@@ -211,46 +209,41 @@ class DNI():
 
         return td_grads, w_out_grads, b_out_grads
 
-    #@tf.function()
+    @tf.function()
     def update_learning_vars(self, h, label, h_prev, label_prev, dL_dz, q, mask, u):
         """Updates the A matrix by Eqs. (3) and (4)."""
 
-        #self.update_J_approx(h, h_prev, u)
+        self.update_J_approx(h, h_prev, u)
 
         #Compute synthetic gradient estimate of credit assignment at previous
         #time step. This is NOT used to drive learning in W but rather to drive
         #learning in A.
-
-        self.a_tilde_prev = tf.concat([h_prev, label_prev, 
+        a_tilde_prev = tf.concat([h_prev, label_prev, 
             tf.ones([self.batch_size, 1])], axis=1)
-        self.sg = self.synthetic_grad(self.a_tilde_prev)
-
+        sg = self.synthetic_grad(a_tilde_prev)
 
         #Compute the target, error and loss for the synthetic gradient function
-
-        self.sg_target = self.get_sg_target(h, label, dL_dz, q)
-        self.A_error   = (self.sg - self.sg_target) * tf.expand_dims(mask, 1)
-
-        #self.A_loss    = tf.reduce_mean(0.5 * tf.math.square(self.A_error))
+        sg_target, a_tilde = self.get_sg_target(h, label, dL_dz, q)
+        A_err = (sg - sg_target) * tf.expand_dims(mask, 1)
 
         #Compute gradients for A
-        self.scaled_A_error = self.A_error
-        self.A_grad = tf.einsum('ij,ik->kj', self.scaled_A_error, self.a_tilde_prev)
+        A_grad = tf.einsum('ij,ik->kj', A_err, a_tilde_prev)
 
         # Update synthetic gradient parameters
-        self.A_grad = tf.clip_by_norm(self.A_grad, 0.5)
-        self.optimizer.apply_gradients([(self.A_grad, self.A)])
-
+        A_grad = tf.clip_by_norm(A_grad, 0.5)
+        self.optimizer.apply_gradients([(A_grad, self.A)])
 
         # On interval determined by self.fix_A_interval, update A_, the values
         # used to calculate the target in Eq. (3), with the latest value of A.
-        if self.i_fix == self.fix_A_interval - 1:
-            self.i_fix = 0
-            self.A_.assign(self.A)
+        if self.i_fix == self.fix_A_interval:
+            self.i_fix.assign(0)
+            self.A_.assign(tf.identity(self.A))
         else:
-            self.i_fix += 1
+            self.i_fix.assign_add(1)
 
-    #@tf.function()
+        return a_tilde
+
+    @tf.function()
     def get_sg_target(self, h, label, dL_dz, q):
         """Function for generating the target for training A. Implements Eq. (3)
         using a different set of weights A_, which are static and only
@@ -261,20 +254,19 @@ class DNI():
         """
 
         # Get latest q value, slide current q value to q_prev.
-        self.propagate_feedback_to_hidden(dL_dz, q)
-        self.a_tilde = tf.concat([h, label, tf.ones([self.batch_size,1])], 
+        q_prev, q = self.propagate_feedback_to_hidden(dL_dz, q)
+        a_tilde = tf.concat([h, label, tf.ones([self.batch_size,1])], 
             axis=1)
 
         # Calculate the synthetic gradient for the 'next' (really the current,
         # but next relative to the previous) time step.
-        sg_next = self.synthetic_grad_(self.a_tilde)
+        sg_next = self.synthetic_grad_(a_tilde)
 
         # Backpropagate by one time step and add to q_prev to get sg_target.
-        sg_target = self.q_prev + tf.squeeze(tf.expand_dims(sg_next,1) 
+        sg_target = q_prev + tf.squeeze(tf.expand_dims(sg_next,1) 
             @ self.J_approx)
 
-        return sg_target
-
+        return sg_target, a_tilde
 
     def update_J_approx(self, h, h_prev, u):
         """Updates the approximate Jacobian by SGD according to a squared-error
@@ -284,33 +276,32 @@ class DNI():
         dJ_loss/dJ_{ij} = (J a_prev - a)_i a_prev_j              (7).
         """
         if self.use_approx_J:
-            self.J_error = tf.einsum('ij,ijk->ij', h_prev, self.J_approx) - h
-            self.J_approx -= (self.J_lr * tf.einsum('ij,ik->ijk', 
-                self.J_error, h_prev))# / tf.reduce_max(h))
+            J_err = tf.einsum('ij,ijk->ij', h_prev, self.J_approx) - h
+            J_chng = -(self.J_lr * tf.einsum('ij,ik->ijk', 
+                J_err, h_prev) / tf.reduce_max(h))
+            self.J_approx.assign_add(J_chng)
         else:
             D = tf.linalg.diag(util.relu_derivative(u)) #Nonlinearity derivative
             self.J_approx = self.alpha * tf.multiply(D, self.W_rec) + (1 - self.alpha) * tf.eye(self.n_hidden)
 
-
+    @tf.function()
     def synthetic_grad(self, a_tilde):
         """Computes the synthetic gradient using current values of A.
         Retuns:
             An array of shape (n_h) representing the synthetic gradient.
         """
-        self.sg_h = a_tilde @ self.A
-        return self.sg_h
+        return a_tilde @ self.A
 
-
+    @tf.function()
     def synthetic_grad_(self, a_tilde):
         """Computes the synthetic gradient using A_ and with an extra activation
         function (for DNI(b)), only for computing the label in Eq. (3).
         Retuns:
             An array of shape (n_h) representing the synthetic gradient."""
-        self.sg_h_ = a_tilde @ self.A_
-        return self.sg_h_ # Should this be relu(self.sg_h_)?
+        return a_tilde @ self.A_
 
-
-    def get_rec_grads(self, h_prev, u, td_inputs):
+    @tf.function()
+    def get_rec_grads(self, h_prev, u, td_inputs, a_tilde):
         """Computes the recurrent grads for the network by implementing Eq. (2),
         using the current synthetic gradient function.
         Note: assuming self.a_tilde already calculated by calling get_sg_target,
@@ -322,11 +313,11 @@ class DNI():
         """
 
         # Calculate synthetic gradient
-        self.sg = self.synthetic_grad(self.a_tilde)
+        sg = self.synthetic_grad(a_tilde)
 
         # Combine the first 3 factors of the RHS of Eq. (2) into sg_scaled
         D = util.relu_derivative(u)
-        self.sg_scaled = self.sg * self.alpha * D
+        sg_scaled = sg * self.alpha * D
 
-        return tf.tensordot(self.sg_scaled, td_inputs, axes=([0], [0]))
+        return tf.tensordot(sg_scaled, td_inputs, axes=([0], [0]))
 

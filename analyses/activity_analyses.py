@@ -266,18 +266,17 @@ class NetworkAnalyzer:
         for i, iteration in enumerate(self.train_iters):
             print(f"\t{i}")
 
-            if i != len(self.train_iters) - 1:
-                continue
 
             h_i = self.train_acts['data'][i,:,:,:].astype(np.float32)
 
             # Remove components directly related to stimulus presentation
+            '''
             to_remove = []
             for samp in np.unique(self.train_samples, axis=0):
                 samp_trials = np.unique(np.where(self.train_samples == samp)[0])
                 act = h_i[samp_trials]
                 to_remove.append(act[:, self.epoch_bounds['sample'],:].mean((0)))
-
+            '
             
             sample_period_pcs = PCA().fit(np.array(to_remove).reshape((-1, self.N_NEUR)))
             n_pcs_to_remove = np.argwhere(np.cumsum(sample_period_pcs.explained_variance_ratio_) > 0.99)[0][0]
@@ -285,8 +284,10 @@ class NetworkAnalyzer:
             h_to_change = np.dot(h_to_change - sample_period_pcs.mean_, sample_period_pcs.components_.T[:,n_pcs_to_remove:])
             h_to_change = np.dot(h_to_change, sample_period_pcs.components_[n_pcs_to_remove:, :]) + sample_period_pcs.mean_
             h_i = np.reshape(h_to_change, h_i.shape)
+
             
             self.obtain_output_subspace(h_i, self.train_rules, self.train_labels)
+            '''
 
             if DO_REDUCE_H:
                 # Reduce in dimensionality to N PCs that explain >99 percent of variance
@@ -762,6 +763,7 @@ class NetworkAnalyzer:
                 explained for each (activity, PC) pairing
         """
         # To start: perform PCA on all activity together
+        h[np.where(~np.isfinite(h))] = 0.
         pca = PCA().fit(np.reshape(h, (-1, self.N_NEUR)))
         e_vals = pca.explained_variance_ratio_
         total_n_pcs = max(np.argwhere(np.cumsum(e_vals) > 0.9)[0][0] + 1, 2)
@@ -944,7 +946,7 @@ class NetworkAnalyzer:
 
         return decode
 
-    def decode_counterfactual(self, h, rules, samples, outputs, n_pcs=10):
+    def decode_counterfactual(self, h, rules, samples, outputs, n_pcs=30):
         """
         Perform counterfactual decoding analysis - given the stimuli that were
         shown, how well can you decode what the output should've been under
@@ -962,7 +964,7 @@ class NetworkAnalyzer:
         """
         # Set up array for recording results
         counterfactual_decode = np.zeros((self.N_TASKS, self.N_TASKS, 
-            len(self.epoch_bounds) - 3, n_pcs))
+            len(self.epoch_bounds) - 3, n_pcs//3))
         ctfctl_overlap = np.zeros((self.N_TASKS, self.N_TASKS))
         n_o = len(np.unique(outputs))
         
@@ -972,10 +974,12 @@ class NetworkAnalyzer:
         # For each pair of tasks (X, Y), take all trials where
         # task was X, and assign to it the label under Y; then try
         # to decode that output from the activity of X
+        t0 = time.time()
         for k, b in enumerate(list(self.epoch_bounds.values())[3:]):
             h_b = h[:, b[5:],:]
 
             for i, t1 in enumerate(np.unique(rules)):
+                print(i, f"{str(datetime.timedelta(seconds=int(round(time.time() - t0, 0))))}")
                 h_t1_b = h_b[np.where(rules == t1)[0]]
 
                 t1_labels_oh = np.eye(n_o)[outputs[np.where(rules == t1)[0]]-1]
@@ -996,13 +1000,13 @@ class NetworkAnalyzer:
 
                     h_t_bxt_by_n = np.reshape(h_t1_b, (-1, self.N_NEUR))
 
-                    for p in range(n_pcs):
-            
+                    for p in range(0, n_pcs, 3):
+                    
                         h_t_k = np.dot(h_t_bxt_by_n - mu, comp.T[:,:p+1])
                         h_t_k = np.reshape(h_t_k, (h_t1_b.shape[0], h_t1_b.shape[1], p+1))
 
                         # Decode counterfactual output from activity through time
-                        counterfactual_decode[i, j, k, p] = self.decode(h_t_k, o_t2).mean()
+                        counterfactual_decode[i, j, k, p//3] = self.decode(h_t_k, o_t2).mean()
 
                     # Obtain level of overlap between labelings given permutation
                     # (only need to do this once, not separately for each epoch)
@@ -1089,7 +1093,7 @@ class NetworkAnalyzer:
 
         return all_decodes, all_decodes_by_t
 
-    def compute_subspace_specialization(self, h, rules, outputs, samples, n_pcs=10):
+    def compute_subspace_specialization(self, h, rules, outputs, samples, n_pcs=20):
 
         # Set up recording of results (TASKS x TIME)
         dec_shape = (self.N_TASKS, 
@@ -1222,9 +1226,6 @@ class NetworkAnalyzer:
             # Compute output specificity
             for o1 in decisions:
 
-
-
-
                 # Select all trials where output was o1 (if no such trials for this
                 # task, just store some zeros and move along)
                 rel_trials = np.where(o_t == o1)[0]
@@ -1330,15 +1331,18 @@ class ResultsAnalyzer:
         self.net_fns = net_fns
         self.training_data, self.trained_data = self.load_data(fns, net_fns)
 
-        self.epoch_bounds   = {'dead'  : [0, 200],
-                               'fix'   : [200, 500],
+        self.epoch_bounds   = {'dead'  : [0, 300],
+                               'fix'   : [300, 500],
                                'sample': [500,800],
                                'delay' : [800,1800],
                                'test'  : [1800,2100]}
         self.N_TASKS = 8
         self.N_SAMPLE = 8
         self.TRIAL_LEN = 2100
-        self.task_list = ["LeftIndication", "RightIndication", 
+        #self.task_list = ["LeftIndication", "RightIndication", 
+        #    "MinIndication", "MaxIndication", "SubtractingLeftRight",
+        #    "SubtractingRightLeft", "Summing", "SummingOpposite"]
+        self.task_list = ['IndicateRF0', 'IndicateRF1', 
             "MinIndication", "MaxIndication", "SubtractingLeftRight",
             "SubtractingRightLeft", "Summing", "SummingOpposite"]
 
@@ -1809,7 +1813,7 @@ class ResultsAnalyzer:
         o_dec = np.array(self.training_data['o_decodes'])
 
         print(s0_dec.shape)
-        self.iters = [self.iters[0], self.iters[-1]]
+        #self.iters = [self.iters[0], self.iters[-1]]
 
         long_data = []
 
@@ -1895,6 +1899,13 @@ class ResultsAnalyzer:
         if the subspaces are specialized, then cross-task output decode 
         should be low in low-dimensional components (w/ high-dimensional 
         decode allowing for possibility that information is still present).
+
+        Interpetation of dimensions: 
+        In NET [0], at training iteration [1], using the activity during 
+        trials where the network was cued to perform task [2], if you try
+        to decode what the output would have been if it was a trial of 
+        task [3], during epoch [4], from the first [5] PCs of that task's 
+        activity....
         """
 
         # Collect counterfactual decode data
@@ -1907,6 +1918,48 @@ class ResultsAnalyzer:
 
         eps = list(self.epoch_bounds.keys())[-2:]
         
+
+        # Make lineplot: counterfactual decode for one pairing of tasks 
+        # as a function of number of PCs
+        tasks_to_plot = [0, 3, 5, 6, 7]
+        iters_to_plot = [0, -1]
+
+        colors = sns.color_palette('Set2').as_hex()
+        
+        for t in tasks_to_plot:
+            for i in iters_to_plot:
+                sns.set_palette("Set2")
+                fig, ax = plt.subplots(1, figsize=(5,3))
+                yes_t = [t]
+                no_t = np.setdiff1d(np.arange(ctfctl_dec.shape[2]), t)
+                print(yes_t, no_t)
+                d0 = ctfctl_dec[:,i,yes_t,yes_t,-1,:].squeeze() #/ ctfctl_dec[:,-1,-2,-2,-1,:].squeeze()
+                d1 = ctfctl_dec[:,i,no_t,yes_t,-1,:].squeeze() #/ ctfctl_dec[:,-1,0,0,-1,:].squeeze()
+                lines = ax.plot(np.arange(0, d0.shape[1]*3, 3), d0.mean(0), linewidth=2)
+                l1s = ax.plot(np.arange(0, d1.shape[-1]*3, 3), d1.mean(0).T, color='black')
+
+                # Special additions here
+                if t == 5:
+                    l1s[4].set_color(colors[1])
+                if t == 0:
+                    l1s[0].set_color(colors[1])
+                if t == 3:
+                    l1s[2].set_color(colors[1])
+
+
+                lines.extend(l1s)
+                labels = [self.task_list[t]]
+                labels.extend([self.task_list[n] for n in no_t])
+                ax.legend(lines, labels)
+                ax.set(ylim=[0.15, 1.],
+                       xlabel='# PCs',
+                       ylabel='Decode')
+                sns.move_legend(ax, bbox_to_anchor=(1.04,0.5), loc="center left", borderaxespad=0, frameon=False)
+                fig.tight_layout()
+                
+                fig.savefig(f"ctfctl_dec_lineplot_task={t}_iter={i}.png", dpi=500)
+                plt.close(fig)
+        return
         # Assemble data into pandas format
         '''
         long_data = []
@@ -2087,7 +2140,7 @@ if __name__ == "__main__":
             continue
 
         # Perform specified analyses
-        analyses = list(range(23,40)) + ["23a"]
+        analyses = [25, 30]#list(range(23,40)) + ["23a"]
         results, results_fn = net_analyzer.perform_all_analyses(analyses)
         results_fns.append(results_fn)
         net_fns.append(fn)
@@ -2095,7 +2148,7 @@ if __name__ == "__main__":
 
     # Perform summary analyses
     ra = ResultsAnalyzer(args, results_fns, net_fns)
-    ra.generate_all_figures([2])
+    ra.generate_all_figures([3])
     
 
     

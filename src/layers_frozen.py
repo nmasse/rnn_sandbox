@@ -23,17 +23,13 @@ class Linear(tf.keras.layers.Layer):
         super(Linear, self).__init__()
 
         self.mask = mask
-        self.w = tf.Variable(
-            initial_value=initial_weights,
-            trainable=trainable,
+        self.w = tf.constant(initial_weights,
             name=name+'_w'
         )
 
         if bias:
             initial_bias = np.zeros((1, initial_weights.shape[1]), dtype=np.float32)
-            self.b = tf.Variable(
-                initial_value=initial_bias,
-                trainable=trainable,
+            self.b = tf.constant(initial_bias,
                 name=name+'_b'
             )
         else:
@@ -51,14 +47,10 @@ class Recurrent(tf.keras.layers.Layer):
 
         self.mask = mask
         self.EI = EI
-        self.w = tf.Variable(
-            initial_value=initial_weights,
-            trainable=trainable,
+        self.w = tf.constant(initial_weights,
             name=name+'_w'
         )
-        self.b = tf.Variable(
-            initial_value=initial_bias,
-            trainable=trainable,
+        self.b = tf.constant(initial_bias,
             name=name+'_b'
         )
 
